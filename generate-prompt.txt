@@ -1,0 +1,14 @@
+i need a prompt for qwen code. Below are the requirements for my dashboard. Be super critical and ask me as many questions as you need before making the prompt, keep in mind i want a robust system thats easy to extend so SOLID principles and extensibility is a must. 
+
+i want to create a paper trading dashboard that can paper trade based on signals coming from a telegram channel. the channel should be configurable from a environment file because eventually i want to plug in other channels and paper trade their signals. the trade message usually comes in a way that we could easily detect so a config for trade message template  must also be able to be set. when we place a trade on paper it should track the trade and close the trade when stop loss or take profit is hit and keep the trade logs and profit and loss. The one consideration for the particular channel i want to start with is that initially the signal comes in and says something like "gold buy 4556" then later on that message is edited and says "GOLD BUY NOW 
+Buy at 4553-4556
+SL 4546
+TP 4559
+TP 4565
+"
+
+this is just an example, but the point is that the stop loss and take profit are only known after some time and the max entry price is known upfront. the paper trader must ensure that we are not entering trades if the price is above the max entry price
+
+i want a fast ui library when building this and i want to deploy it onto render
+
+let me know if there are details you with to clarify

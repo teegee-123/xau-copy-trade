@@ -1,0 +1,1 @@
+# XAU Copy Trade Backend

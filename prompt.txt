@@ -1,0 +1,85 @@
+# Role
+Act as a Senior Software Architect and Full-Stack Developer. You are tasked with building a robust, extensible Paper Trading Dashboard and Bot system.
+
+# Project Overview
+Create a system that listens to a specific Telegram Channel (via Userbot/MTProto) for trading signals on XAU/USD (Gold). It must parse signals (which may be edited later to include SL/TP), validate entry prices via a live WebSocket feed, execute paper trades, and display real-time status on a high-performance React dashboard. The system must be deployable as a single Docker container on Render's free tier.
+
+# Tech Stack
+- **Backend/Bot:** Python 3.10+ (FastAPI, Telethon, websockets).
+- **Frontend:** React (Vite + TypeScript) - *Must be built to static files and served by FastAPI*.
+- **State Management:** In-memory (Singleton services) - No persistent database required (ephemeral state is acceptable).
+- **Deployment:** Single Dockerfile (Multi-stage build: Build React, then run Python).
+- **Architecture:** SOLID Principles, Dependency Injection, Clean Architecture.
+
+# Critical Architectural Requirements
+1. **SOLID & Extensibility:** 
+   - Use Abstract Base Classes (ABC) for all core services (`ITelegramService`, `IPriceService`, `ITradeManager`, `ISignalParser`).
+   - Use Dependency Injection for all services.
+   - The system must be designed so that adding a new channel or price provider requires minimal code changes (Open/Closed Principle).
+2. **Single Container Constraint:** 
+   - The FastAPI server must serve the React static files.
+   - The Telegram Bot and Price WebSocket listeners must run as non-blocking background tasks within the FastAPI lifespan events.
+   - Implement a `/health` endpoint for Render keep-alive (to prevent free tier sleep).
+3. **Telegram Logic (MTProto):**
+   - Use `Telethon` for Userbot functionality (required to detect edited messages in channels).
+   - **Signal Flow:** 
+     1. Detect initial message (e.g., "Gold Buy 4556").
+     2. Store pending trade state keyed by `message_id`.
+     3. Listen for `edited_message` events on that `message_id` to retrieve SL/TP.
+     4. If `message_id` is missing, fallback to matching `timestamp + symbol + direction`.
+   - **Config:** All Telegram configs (API ID, Hash, Channel ID, Regex Templates) must come from `.env`.
+4. **Trading Logic:**
+   - **Asset:** XAU/USD.
+   - **Price Feed:** Connect to a reliable free WebSocket (e.g., Binance Futures XAUUSD or similar reliable forex crypto proxy). Do not poll; use streams.
+   - **Entry Condition:** ONLY enter if `Current Price <= Max Entry Price` from signal. If price is higher, ignore signal.
+   - **SL/TP:** If multiple TPs are provided, use the **lowest TP** value for the target.
+   - **Execution:** Paper trade only (update internal state, calculate P&L).
+   - **Controls:** API endpoint to `PAUSE`/`RESUME` the bot logic globally.
+5. **Frontend Dashboard:**
+   - **Performance:** Use React with efficient state updates (WebSockets or SSE from FastAPI to push trade updates to UI).
+   - **Views:** 
+     - Active Trades (Entry, SL, TP, Current P&L).
+     - Trade History (Closed trades).
+     - Controls (Pause/Resume toggle).
+     - Connection Status (Telegram/Price Feed health).
+   - **Styling:** Use a lightweight utility-first CSS framework (Tailwind) for speed.
+
+# Implementation Details & Constraints
+- **Parsing:** Use configurable Regex patterns loaded from env vars to extract Symbol, Direction, Entry, SL, TP from message text.
+- **State:** Use a thread-safe in-memory store (e.g., `asyncio.Lock` protected dict) for active trades.
+- **Render Free Tier:** 
+  - Acknowledge that Render Web Services sleep after 15 mins of inactivity. 
+  - Implement a frontend heartbeat or external ping logic suggestion in the README.
+  - Ensure the bot reconnects gracefully if the WebSocket drops due to sleep.
+- **Error Handling:** Robust try/catch blocks around Telegram and WebSocket connections. The bot should not crash the API server if Telegram disconnects.
+
+# Deliverables
+1. **Project Structure:** A clear file tree showing separation of concerns (e.g., `/services`, `/models`, `/api`, `/frontend`).
+2. **Backend Code:** 
+   - `main.py` (FastAPI entry point with lifespan events).
+   - `services/` (Abstract interfaces and implementations).
+   - `parsers/` (Regex logic).
+   - `models/` (Pydantic models for Trades/Signals).
+3. **Frontend Code:** 
+   - Complete React app structure.
+   - Build script integration.
+4. **Dockerfile:** Multi-stage build (Node for React build, Python for runtime).
+5. **.env.example:** All required environment variables.
+6. **README:** Setup instructions, specifically highlighting the Render deployment steps and Telegram API acquisition.
+
+# Specific Logic Scenario to Handle
+- **Scenario:** Signal arrives: "GOLD BUY 4556". 
+  - System checks price. If Price > 4556, do nothing but log "Pending Validation".
+  - Message edits to: "GOLD BUY NOW, Entry 4553-4556, SL 4546, TP 4559".
+  - System updates pending trade with SL/TP.
+  - If Price is now within 4553-4556, Open Trade.
+  - Track price via WebSocket. If Price hits 4546, Close Trade (SL). If Price hits 4559, Close Trade (TP).
+  - Log result to history.
+
+# Instructions for You (Qwen)
+- Do not use placeholder code. Write functional, production-ready logic.
+- Prioritize type hinting and docstrings.
+- Ensure the React app communicates with the FastAPI backend via WebSocket or Server-Sent Events for real-time trade updates (no polling for trade status).
+- If any ambiguity remains regarding specific Forex API endpoints, choose the most stable free option available (e.g., Binance Futures) and document it.
+
+Begin by outlining the file structure, then proceed to implement the core services.
