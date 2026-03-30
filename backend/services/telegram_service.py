@@ -59,12 +59,13 @@ class TelegramService(ITelegramService):
         self.phone = phone
         self.channel_id = channel_id
         self.session_name = session_name
-        
-        # Determine session path
+
+        # Determine session path (use absolute path to avoid working directory issues)
         if session_path:
-            self._session_path = os.path.join(session_path, session_name)
+            base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', session_path))
         else:
-            self._session_path = session_name
+            base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        self._session_path = os.path.join(base_path, session_name)
         
         # Initialize Telethon client
         self._client: Optional[TelegramClient] = None
@@ -163,11 +164,34 @@ class TelegramService(ITelegramService):
         """Check if currently connected to Telegram."""
         if not self._client:
             return False
-        
+
         try:
             return self._is_connected and await self._client.is_connected()
         except Exception:
             return False
+
+    async def is_authorized(self) -> bool:
+        """Check if the session is authorized.
+
+        Returns:
+            True if authorized
+        """
+        if not self._client:
+            # Create temporary client to check
+            temp_client = TelegramClient(
+                self._session_path,
+                self.api_id,
+                self.api_hash,
+            )
+            try:
+                await temp_client.connect()
+                return await temp_client.is_user_authorized()
+            except Exception:
+                return False
+            finally:
+                await temp_client.disconnect()
+
+        return await self._client.is_user_authorized()
     
     async def start_listening(
         self,
@@ -310,7 +334,7 @@ class TelegramService(ITelegramService):
     @classmethod
     def from_config(cls) -> "TelegramService":
         """Create TelegramService from configuration.
-        
+
         Returns:
             Configured TelegramService instance
         """
@@ -321,4 +345,5 @@ class TelegramService(ITelegramService):
             phone=config["phone"],
             channel_id=config["channel_id"],
             session_name=config["session_name"],
+            session_path="backend",
         )

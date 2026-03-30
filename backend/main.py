@@ -41,6 +41,7 @@ from backend.api.routes import (
     get_websocket_broadcaster,
     get_bot_state_manager,
 )
+from backend.api.auth import router as auth_router
 from backend.dependency_injection import (
     register_services,
     get_telegram_service,
@@ -531,6 +532,7 @@ app.add_middleware(
 
 # Include API routes
 app.include_router(trading_router)
+app.include_router(auth_router)
 
 # Mount static files (React build)
 dist_path = Path(__file__).parent.parent / "frontend" / "dist"
@@ -652,6 +654,11 @@ async def api_info() -> dict:
             "control": "/api/control",
             "status": "/api/status",
             "websocket": "/ws/trades",
+            "auth": {
+                "initiate": "/tg-auth",
+                "complete": "/tg-auth-code",
+                "status": "/tg-auth-status",
+            },
         }
     }
 
