@@ -1,12 +1,12 @@
 services:
-  # Build v2 - moved @types to dependencies for proper installation
+  # Build v3 - using build.sh script for reliability
   - type: web
     name: xau-copy-trade
     env: node
     region: oregon
     plan: free
     nodeVersion: '20'
-    buildCommand: rm -rf node_modules src/client/node_modules && npm install && cd src/client && npm install && cd ../.. && npm run build
+    buildCommand: ./build.sh
     startCommand: node dist/server/index.js
     healthCheckPath: /health
     envVars:
