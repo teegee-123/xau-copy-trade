@@ -13,6 +13,9 @@
     "build:server": "tsc -p tsconfig.server.json",
     "start": "npm run build && node dist/server/index.js",
     "start:dist": "node dist/server/index.js",
+    "start:render": "node dist/server/index.js",
+    "render:build": "npm run install:client && npm run build",
+    "healthcheck": "node render-healthcheck.js",
     "lint": "eslint src --ext .ts,.tsx"
   },
   "dependencies": {

@@ -44,9 +44,20 @@ app.use('/api/trades', tradesRoutes);
 app.use('/api/price', priceRoutes);
 app.use('/api', systemRoutes);
 
-// Health check
+// Health check with memory info for Render monitoring
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  const memUsage = process.memoryUsage();
+  const healthStatus = {
+    status: 'ok' as const,
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    memory: {
+      heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024) + ' MB',
+      heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024) + ' MB',
+      rss: Math.round(memUsage.rss / 1024 / 1024) + ' MB',
+    },
+  };
+  res.json(healthStatus);
 });
 
 // Serve static files (React app)
@@ -102,6 +113,10 @@ async function bootstrap(): Promise<void> {
       logger.info(`Server running on port ${PORT}`);
       logger.info(`Dashboard: http://localhost:${PORT}`);
       logger.info(`API: http://localhost:${PORT}/api`);
+      
+      // Log memory usage for Render free tier monitoring (512MB limit)
+      const memUsage = process.memoryUsage();
+      logger.info(`Memory usage - Heap: ${Math.round(memUsage.heapUsed / 1024 / 1024)}MB / ${Math.round(memUsage.heapTotal / 1024 / 1024)}MB, RSS: ${Math.round(memUsage.rss / 1024 / 1024)}MB`);
     });
 
     // Graceful shutdown

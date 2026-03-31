@@ -1,0 +1,42 @@
+services:
+  - type: web
+    name: xau-copy-trade
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: node dist/server/index.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: SESSION_FILE_PATH
+        value: /tmp/session.json
+      - key: DATABASE_PATH
+        value: /tmp/trades.db
+      - key: LOG_FILE_PATH
+        value: /tmp/app.log
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=400
+      - key: TELEGRAM_API_ID
+        sync: false
+      - key: TELEGRAM_API_HASH
+        sync: false
+      - key: TELEGRAM_PHONE
+        sync: false
+      - key: TELEGRAM_CHANNEL_ID
+        sync: false
+      - key: DEFAULT_LOT_SIZE
+        value: 0.1
+      - key: DEFAULT_SYMBOL
+        value: XAUUSD
+      - key: PRICE_API_KEY
+        sync: false
+      - key: LOG_LEVEL
+        value: info
+      - key: TRADING_ENABLED
+        value: "true"
+      - key: SL_TP_TIMEOUT_MINUTES
+        value: 5

@@ -3,6 +3,7 @@
 A comprehensive paper trading dashboard that consumes trading signals from Telegram channels, executes paper trades, tracks positions, and closes them when stop loss (SL) or take profit (TP) levels are hit.
 
 ![Dashboard Preview](./docs/dashboard-preview.png)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/your-username/xau-copy-trade)
 
 ## Features
 
@@ -100,6 +101,27 @@ docker-compose up -d --build
 ```
 
 Access the dashboard at http://localhost:3000
+
+### 5. Deploy to Render (Cloud Hosting)
+
+Deploy to Render.com's free tier in minutes:
+
+```bash
+# Push your code to GitHub/GitLab
+git push origin main
+
+# Then visit Render dashboard:
+# https://dashboard.render.com → New + → Blueprint
+# Or use the Deploy button at the top of this README
+```
+
+**Free Tier Includes:**
+- 512 MB RAM
+- 0.25 vCPU
+- 750 hours/month (24/7 for one service)
+- 100 GB bandwidth/month
+
+See the complete guide: [docs/render-deployment.md](./docs/render-deployment.md)
 
 ## Configuration
 
