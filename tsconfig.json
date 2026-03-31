@@ -15,7 +15,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"]
-    }
+    },
+    "types": ["node"]
   },
   "include": ["src/**/*"],
   "exclude": ["src/client", "node_modules", "dist"]
