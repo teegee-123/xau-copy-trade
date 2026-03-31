@@ -49,6 +49,7 @@ app.get('/health', (req, res) => {
 });
 
 // Serve static files (React app)
+// When running from dist/server/index.js, go up two levels to reach project root, then into src/client/dist
 const clientPath = path.join(__dirname, '../../src/client/dist');
 app.use(express.static(clientPath));
 

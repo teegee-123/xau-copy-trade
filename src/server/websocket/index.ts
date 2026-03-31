@@ -7,15 +7,18 @@ import logger from '../logger.js';
 
 interface CustomWebSocket extends WebSocket {
   isAlive?: boolean;
+  id?: string;
 }
 
 export class WebSocketService {
   private wss: WebSocketServer | null = null;
-  private clients: Set<CustomWebSocket> = new Set();
+  private clients: Map<string, CustomWebSocket> = new Map();
+  private heartbeatInterval: NodeJS.Timeout | null = null;
+  private connectionCounter = 0;
 
   initialize(server: Server): void {
-    this.wss = new WebSocketServer({ 
-      server, 
+    this.wss = new WebSocketServer({
+      server,
       path: '/ws',
       perMessageDeflate: false,
     });
@@ -24,28 +27,67 @@ export class WebSocketService {
       this.handleConnection(ws);
     });
 
+    // Start heartbeat to clean up stale connections
+    this.startHeartbeat();
+
     // Subscribe to service events
     this.subscribeToEvents();
 
     logger.info('WebSocket server initialized');
   }
 
+  private startHeartbeat(): void {
+    this.heartbeatInterval = setInterval(() => {
+      if (!this.wss) return;
+
+      const deadClients: string[] = [];
+      this.clients.forEach((ws, id) => {
+        if (ws.isAlive === false) {
+          deadClients.push(id);
+          ws.terminate();
+          return;
+        }
+
+        ws.isAlive = false;
+        ws.ping();
+      });
+
+      // Clean up dead clients
+      deadClients.forEach((id) => {
+        this.clients.delete(id);
+      });
+    }, 30000);
+  }
+
   private handleConnection(ws: CustomWebSocket): void {
-    this.clients.add(ws);
-    logger.info('WebSocket client connected', { totalClients: this.clients.size });
+    // Generate unique ID for this connection
+    const connectionId = `client_${++this.connectionCounter}`;
+    ws.id = connectionId;
+    ws.isAlive = true;
+    
+    // Check if we already have this exact WebSocket (shouldn't happen, but safety check)
+    if (this.clients.has(connectionId)) {
+      logger.warn('Duplicate connection ID detected, closing');
+      ws.terminate();
+      return;
+    }
+
+    this.clients.set(connectionId, ws);
+    logger.debug('WebSocket client connected', { totalClients: this.clients.size });
 
     ws.on('pong', () => {
       ws.isAlive = true;
     });
 
     ws.on('close', () => {
-      this.clients.delete(ws);
-      logger.info('WebSocket client disconnected', { totalClients: this.clients.size });
+      if (this.clients.delete(connectionId)) {
+        logger.debug('WebSocket client disconnected', { totalClients: this.clients.size });
+      }
     });
 
     ws.on('error', (error) => {
-      logger.warn('WebSocket client error', { error: error.message });
-      this.clients.delete(ws);
+      logger.debug('WebSocket client error', { error: error.message });
+      this.clients.delete(connectionId);
     });
 
     // Send initial status
@@ -112,19 +154,19 @@ export class WebSocketService {
 
   private broadcast(message: object): void {
     const messageStr = JSON.stringify(message);
-    const deadClients: Set<CustomWebSocket> = new Set();
+    const deadClients: string[] = [];
 
-    for (const client of this.clients) {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(messageStr);
+    this.clients.forEach((ws, id) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(messageStr);
       } else {
-        deadClients.add(client);
+        deadClients.push(id);
       }
-    }
+    });
 
     // Clean up dead clients
-    deadClients.forEach((client) => {
-      this.clients.delete(client);
+    deadClients.forEach((id) => {
+      this.clients.delete(id);
     });
   }
 
@@ -135,25 +177,26 @@ export class WebSocketService {
   }
 
   /**
-   * Get connected client count
-   */
-  getClientCount(): number {
-    return this.clients.size;
-  }
-
-  /**
    * Cleanup on shutdown
    */
   shutdown(): void {
+    // Stop heartbeat
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+
     if (this.wss) {
-      this.wss.clients.forEach((client) => {
+      this.clients.forEach((client) => {
         client.close(1000, 'Server shutting down');
       });
-      
+
       this.wss.close(() => {
         logger.info('WebSocket server closed');
       });
     }
+
+    this.clients.clear();
   }
 }
 
