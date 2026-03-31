@@ -101,7 +101,10 @@ export function EquityChart({ range, onRangeChange }: EquityChartProps) {
                 borderRadius: '4px',
               }}
               labelStyle={{ color: '#888' }}
-              formatter={(value: number) => [`$${value.toFixed(2)}`, 'Equity']}
+              formatter={(value) => {
+                const numValue = typeof value === 'number' ? value : Number(value);
+                return [`$${numValue.toFixed(2)}`, 'Equity'];
+              }}
             />
             <Line
               type="monotone"
