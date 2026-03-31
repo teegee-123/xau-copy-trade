@@ -1,77 +1,39 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+# Dependencies
+node_modules/
 
-# Virtual environments
-venv/
-ENV/
-env/
-.venv
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Environment files
+.env
+.env.*
+!.env.example
+.env-2
+
+*.db*
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # IDE
 .vscode/
 .idea/
 *.swp
-*.swo
 *~
-
-# Session files (Telegram)
-*.session
-*.session-journal
-sessions/
-
-# Environment
-.env
-.env.local
-.env.*.local
-
-# Logs
-*.log
-logs/
 
 # OS
 .DS_Store
-Thumbs.db
-
-# Node
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Frontend build
-frontend/dist/
-frontend/.vite/
-
-# Docker
-docker-compose.override.yml
 
 # Testing
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
+coverage/
+*.snap
 
-# Misc
-*.bak
-*.tmp
-.cache/
+# Package manager locks (keep package-lock.json)
+yarn.lock
+pnpm-lock.yaml

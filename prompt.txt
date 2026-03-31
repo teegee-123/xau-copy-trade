@@ -1,85 +1,507 @@
-# Role
-Act as a Senior Software Architect and Full-Stack Developer. You are tasked with building a robust, extensible Paper Trading Dashboard and Bot system.
+# Paper Trading Dashboard - Complete Implementation Prompt
 
-# Project Overview
-Create a system that listens to a specific Telegram Channel (via Userbot/MTProto) for trading signals on XAU/USD (Gold). It must parse signals (which may be edited later to include SL/TP), validate entry prices via a live WebSocket feed, execute paper trades, and display real-time status on a high-performance React dashboard. The system must be deployable as a single Docker container on Render's free tier.
+## Overview
+Build a paper trading dashboard that consumes trading signals from a Telegram channel, executes paper trades, tracks positions, and closes them when stop loss (SL) or take profit (TP) levels are hit. The application must include a real-time dashboard showing XAU/USD price, open trades, trade history, P&L, and system status.
 
-# Tech Stack
-- **Backend/Bot:** Python 3.10+ (FastAPI, Telethon, websockets).
-- **Frontend:** React (Vite + TypeScript) - *Must be built to static files and served by FastAPI*.
-- **State Management:** In-memory (Singleton services) - No persistent database required (ephemeral state is acceptable).
-- **Deployment:** Single Dockerfile (Multi-stage build: Build React, then run Python).
-- **Architecture:** SOLID Principles, Dependency Injection, Clean Architecture.
+---
 
-# Critical Architectural Requirements
-1. **SOLID & Extensibility:** 
-   - Use Abstract Base Classes (ABC) for all core services (`ITelegramService`, `IPriceService`, `ITradeManager`, `ISignalParser`).
-   - Use Dependency Injection for all services.
-   - The system must be designed so that adding a new channel or price provider requires minimal code changes (Open/Closed Principle).
-2. **Single Container Constraint:** 
-   - The FastAPI server must serve the React static files.
-   - The Telegram Bot and Price WebSocket listeners must run as non-blocking background tasks within the FastAPI lifespan events.
-   - Implement a `/health` endpoint for Render keep-alive (to prevent free tier sleep).
-3. **Telegram Logic (MTProto):**
-   - Use `Telethon` for Userbot functionality (required to detect edited messages in channels).
-   - **Signal Flow:** 
-     1. Detect initial message (e.g., "Gold Buy 4556").
-     2. Store pending trade state keyed by `message_id`.
-     3. Listen for `edited_message` events on that `message_id` to retrieve SL/TP.
-     4. If `message_id` is missing, fallback to matching `timestamp + symbol + direction`.
-   - **Config:** All Telegram configs (API ID, Hash, Channel ID, Regex Templates) must come from `.env`.
-4. **Trading Logic:**
-   - **Asset:** XAU/USD.
-   - **Price Feed:** Connect to a reliable free WebSocket (e.g., Binance Futures XAUUSD or similar reliable forex crypto proxy). Do not poll; use streams.
-   - **Entry Condition:** ONLY enter if `Current Price <= Max Entry Price` from signal. If price is higher, ignore signal.
-   - **SL/TP:** If multiple TPs are provided, use the **lowest TP** value for the target.
-   - **Execution:** Paper trade only (update internal state, calculate P&L).
-   - **Controls:** API endpoint to `PAUSE`/`RESUME` the bot logic globally.
-5. **Frontend Dashboard:**
-   - **Performance:** Use React with efficient state updates (WebSockets or SSE from FastAPI to push trade updates to UI).
-   - **Views:** 
-     - Active Trades (Entry, SL, TP, Current P&L).
-     - Trade History (Closed trades).
-     - Controls (Pause/Resume toggle).
-     - Connection Status (Telegram/Price Feed health).
-   - **Styling:** Use a lightweight utility-first CSS framework (Tailwind) for speed.
+## Technology Stack
 
-# Implementation Details & Constraints
-- **Parsing:** Use configurable Regex patterns loaded from env vars to extract Symbol, Direction, Entry, SL, TP from message text.
-- **State:** Use a thread-safe in-memory store (e.g., `asyncio.Lock` protected dict) for active trades.
-- **Render Free Tier:** 
-  - Acknowledge that Render Web Services sleep after 15 mins of inactivity. 
-  - Implement a frontend heartbeat or external ping logic suggestion in the README.
-  - Ensure the bot reconnects gracefully if the WebSocket drops due to sleep.
-- **Error Handling:** Robust try/catch blocks around Telegram and WebSocket connections. The bot should not crash the API server if Telegram disconnects.
+| Layer | Technology | Notes |
+|-------|------------|-------|
+| Backend | Node.js + Express.js | REST API + WebSocket for real-time updates |
+| Frontend | React + Vite + TypeScript | Smooth, responsive UI |
+| Styling | Tailwind CSS | Green/black programmer theme |
+| Database | SQLite | Trade logs, history, and session storage |
+| Telegram | grammy/telegraf or similar | MTProto integration for channel monitoring |
+| Charts | Recharts or Chart.js | Equity curve visualization |
+| Logging | Winston + rotating file | Non-blocking, 1000-line threshold |
+| Container | Docker | Single-stage Dockerfile for easy development |
 
-# Deliverables
-1. **Project Structure:** A clear file tree showing separation of concerns (e.g., `/services`, `/models`, `/api`, `/frontend`).
-2. **Backend Code:** 
-   - `main.py` (FastAPI entry point with lifespan events).
-   - `services/` (Abstract interfaces and implementations).
-   - `parsers/` (Regex logic).
-   - `models/` (Pydantic models for Trades/Signals).
-3. **Frontend Code:** 
-   - Complete React app structure.
-   - Build script integration.
-4. **Dockerfile:** Multi-stage build (Node for React build, Python for runtime).
-5. **.env.example:** All required environment variables.
-6. **README:** Setup instructions, specifically highlighting the Render deployment steps and Telegram API acquisition.
+---
 
-# Specific Logic Scenario to Handle
-- **Scenario:** Signal arrives: "GOLD BUY 4556". 
-  - System checks price. If Price > 4556, do nothing but log "Pending Validation".
-  - Message edits to: "GOLD BUY NOW, Entry 4553-4556, SL 4546, TP 4559".
-  - System updates pending trade with SL/TP.
-  - If Price is now within 4553-4556, Open Trade.
-  - Track price via WebSocket. If Price hits 4546, Close Trade (SL). If Price hits 4559, Close Trade (TP).
-  - Log result to history.
+## Core Features
 
-# Instructions for You (Qwen)
-- Do not use placeholder code. Write functional, production-ready logic.
-- Prioritize type hinting and docstrings.
-- Ensure the React app communicates with the FastAPI backend via WebSocket or Server-Sent Events for real-time trade updates (no polling for trade status).
-- If any ambiguity remains regarding specific Forex API endpoints, choose the most stable free option available (e.g., Binance Futures) and document it.
+### 1. Telegram Integration
 
-Begin by outlining the file structure, then proceed to implement the core services.
+- **Single Channel Architecture**: Start with one configurable channel, but design for easy expansion to multiple channels
+- **MTProto Authentication**:
+  - `GET /auth/request?phone={phone}` - Initiates auth, sends code to user's Telegram
+  - `GET /auth/verify?code={code}` - Verifies code and completes authentication
+  - Phone number stored in `.env` file
+  - Session persisted to file (`session.json` or SQLite) so re-authentication isn't needed on restart
+- **Signal Consumption**:
+  - Listen for new messages and message edits in the configured channel
+  - Parse trade signals using configurable templates (see Configuration section)
+  - Detect initial signal (e.g., "gold buy 4556") and updated signal with SL/TP
+
+### 2. Price Feed (XAU/USD)
+
+- **API Selection**: Use a reliable free-tier API (e.g., MetalPriceAPI, GoldAPI.io, or similar) that supports at least 1-second update frequency
+- **Polling Interval**: 1 second or less
+- **Fallback Behavior**: If API fails, use last known price and display a warning on the dashboard via status chip
+- **Symbol Format**: Handle the API's expected format (XAU/USD, XAUUSD, or GOLD)
+- **WebSocket Alternative**: If the API supports free WebSocket, use it instead of polling
+
+### 3. Trade Logic
+
+#### Entry Rules
+- Parse initial signal to extract: action (BUY/SELL), symbol, max entry price
+- **Entry Price Validation**: Do NOT enter if current price exceeds max entry price (for BUY) or is below min entry price (for SELL). Reject and log if breached.
+- **Position Sizing**: Fixed lot size from `.env` (future: configurable via dashboard or message)
+
+#### SL/TP Handling
+- Parse edited message to extract SL and TP levels
+- **Multiple TP Levels**: Use only the lowest TP level for exit
+- **Timeout Handling**: If SL/TP not received within 5 minutes of trade entry:
+  - Mark trade with warning status in UI
+  - Provide "Close Trade" button for individual trades
+  - Provide "Auto Close All Faulted" button to close all trades missing SL/TP after 5 minutes
+- **Trade Exit**: Close entire position when SL or TP is hit (no partial closes)
+
+#### Concurrent Trades
+- Support multiple open trades simultaneously
+- Each trade tracked independently
+
+### 4. Dashboard (Frontend)
+
+#### Theme & Layout
+- **Color Scheme**: Green and black programmer aesthetic
+  - Primary: Neon green (#00ff00 or similar)
+  - Background: Dark (#0a0a0a, #111)
+  - Accents: Dark green, gray
+- **Responsive Design**: Works on desktop and mobile
+
+#### Dashboard Widgets
+1. **Real-Time Price Display**: Large, prominent XAU/USD price with last update timestamp
+2. **Service Status Chips**: Visual indicators for:
+   - Telegram connection status (connected/disconnected/warning)
+   - Price API status (connected/disconnected/warning)
+   - Trading status (active/paused)
+3. **Open Trades Table**:
+   - Columns: Symbol, Action, Entry Price, Current Price, SL, TP, Lot Size, P&L (USD), P&L (%), Status, Actions
+   - Real-time updates via WebSocket or polling
+   - Close button for manual exit
+   - Warning indicator for trades missing SL/TP after 5 minutes
+4. **Trade History Section**:
+   - Closed trades with exit reason (SL hit, TP hit, manual close, fault timeout)
+   - Filterable by date, symbol, action
+5. **P&L Display**:
+   - Total P&L in USD
+   - Total P&L in percentage
+   - Today's P&L
+6. **Equity Curve Chart**:
+   - Line chart showing account equity over time
+   - Time range selector (1D, 1W, 1M, All)
+7. **Log Viewer Window**:
+   - Scrollable log display
+   - Filter by log level (INFO, WARN, ERROR)
+   - Auto-scroll to latest option
+   - Clear logs button
+
+### 5. Backend API
+
+#### Authentication Endpoints
+```
+GET /auth/request?phone={phone}
+  - Sends verification code to Telegram
+  - Response: { success: true, message: "Code sent to +1234567890" }
+
+GET /auth/verify?code={code}
+  - Verifies code and completes MTProto auth
+  - Response: { success: true, session: {...} } or { success: false, error: "Invalid code" }
+```
+
+#### Trade Endpoints
+```
+GET /api/trades/open          - List all open trades
+GET /api/trades/history       - List closed trades (with filters: ?from=, ?to=, ?symbol=, ?action=)
+POST /api/trades/:id/close    - Manually close a trade
+POST /api/trades/close-faulted - Close all trades missing SL/TP after 5 minutes
+```
+
+#### Price Endpoints
+```
+GET /api/price/current        - Get current XAU/USD price
+WS /ws/price                  - WebSocket for real-time price updates
+WS /ws/trades                 - WebSocket for trade updates
+```
+
+#### System Endpoints
+```
+GET /api/status               - Get system status (Telegram, Price API, Trading)
+GET /api/logs                 - Get recent logs (with level filter: ?level=INFO)
+```
+
+### 6. Logging System
+
+- **Library**: Winston with file transport
+- **File Location**: `logs/app.log`
+- **Behavior**: Append-only with automatic purging when exceeding 1000 lines
+- **Log Levels**: INFO, WARN, ERROR
+- **Non-Blocking**: Use async file writing
+- **Dashboard Integration**: Logs streamed to dashboard log viewer via API endpoint
+
+---
+
+## Configuration
+
+### Environment Variables (.env)
+
+Create `.env` and `.env.example` with the following:
+
+```env
+# Server Configuration
+PORT=3000
+NODE_ENV=development
+
+# Telegram Configuration
+TELEGRAM_API_ID=your_api_id
+TELEGRAM_API_HASH=your_api_hash
+TELEGRAM_PHONE=+1234567890
+TELEGRAM_CHANNEL_ID=-1001234567890
+
+# Trade Configuration
+DEFAULT_LOT_SIZE=0.1
+DEFAULT_SYMBOL=XAUUSD
+
+# Price API Configuration
+PRICE_API_KEY=your_api_key
+PRICE_API_URL=https://api.example.com/v1/quotes
+
+# Session Storage
+SESSION_FILE_PATH=./data/session.json
+
+# Logging
+LOG_LEVEL=info
+LOG_FILE_PATH=./logs/app.log
+LOG_MAX_LINES=1000
+```
+
+### Trade Message Template Configuration
+
+Create a well-documented configuration file (`config/trade-templates.json`) that allows users to define extraction rules for trade signals. Include a README section explaining how to configure this.
+
+#### Example Configuration with Walkthrough
+
+```json
+{
+  "channelConfig": {
+    "channelId": "-1001234567890",
+    "channelName": "XAU Signals Pro"
+  },
+  
+  "entrySignalTemplate": {
+    "description": "Pattern to detect initial trade signal (e.g., 'gold buy 4556')",
+    "pattern": "^(gold|xau(?:usd)?)\\s+(buy|sell)\\s+([\\d.]+)$",
+    "flags": "i",
+    "extractionRules": {
+      "symbol": {
+        "group": 1,
+        "transform": "uppercase",
+        "mapping": {
+          "GOLD": "XAUUSD",
+          "XAU": "XAUUSD",
+          "XAUUSD": "XAUUSD"
+        }
+      },
+      "action": {
+        "group": 2,
+        "transform": "uppercase"
+      },
+      "maxEntryPrice": {
+        "group": 3,
+        "transform": "parseFloat"
+      }
+    },
+    "examples": [
+      {
+        "message": "gold buy 4556",
+        "extracted": { "symbol": "XAUUSD", "action": "BUY", "maxEntryPrice": 4556 }
+      },
+      {
+        "message": "XAUUSD SELL 4600",
+        "extracted": { "symbol": "XAUUSD", "action": "SELL", "maxEntryPrice": 4600 }
+      }
+    ]
+  },
+  
+  "sltpSignalTemplate": {
+    "description": "Pattern to detect updated signal with SL/TP (edited message)",
+    "pattern": "(gold|xau(?:usd)?)\\s+(buy|sell)[\\s\\S]*?buy at\\s+([\\d.\\-]+)[\\s\\S]*?sl\\s+([\\d.]+)[\\s\\S]*?tp\\s+([\\d.]+)",
+    "flags": "i",
+    "extractionRules": {
+      "symbol": {
+        "group": 1,
+        "transform": "uppercase",
+        "mapping": {
+          "GOLD": "XAUUSD",
+          "XAU": "XAUUSD"
+        }
+      },
+      "action": {
+        "group": 2,
+        "transform": "uppercase"
+      },
+      "entryPriceRange": {
+        "group": 3,
+        "transform": "parseRange",
+        "description": "Parse '4553-4556' into { min: 4553, max: 4556 }"
+      },
+      "stopLoss": {
+        "group": 4,
+        "transform": "parseFloat"
+      },
+      "takeProfit": {
+        "group": 5,
+        "transform": "parseFloat",
+        "note": "If multiple TP values exist, use the first (lowest for BUY, highest for SELL)"
+      }
+    },
+    "examples": [
+      {
+        "message": "GOLD BUY NOW\nBuy at 4553-4556\nSL 4546\nTP 4559\nTP 4565",
+        "extracted": {
+          "symbol": "XAUUSD",
+          "action": "BUY",
+          "entryPriceRange": { "min": 4553, "max": 4556 },
+          "stopLoss": 4546,
+          "takeProfit": 4559
+        }
+      }
+    ]
+  }
+}
+```
+
+#### Configuration Walkthrough (Include in README)
+
+```markdown
+## How to Configure Trade Message Templates
+
+### Step 1: Understand the Pattern Syntax
+Patterns use JavaScript RegExp syntax. Key elements:
+- `^` and `$` - Start and end of message
+- `\\s+` - One or more whitespace characters
+- `([\\d.]+)` - Capture group for numbers (price values)
+- `(buy|sell)` - Capture group for action keywords
+- `i` flag - Case insensitive matching
+- `[\\s\\S]*?` - Match any characters (including newlines) non-greedily
+
+### Step 2: Define Extraction Rules
+Each capture group is mapped to a field:
+- `group`: Which capture group number (1-based)
+- `transform`: How to process the value
+  - `uppercase` - Convert to uppercase
+  - `parseFloat` - Convert to number
+  - `parseRange` - Parse "4553-4556" into { min, max }
+
+### Step 3: Test Your Configuration
+Use the examples array to document test cases. The system will validate against these.
+
+### Step 4: Symbol Mapping
+Map channel-specific symbols to your internal format:
+```json
+"mapping": {
+  "GOLD": "XAUUSD",
+  "XAUUSD": "XAUUSD"
+}
+```
+
+### Common Patterns
+
+**Simple Signal**: `gold buy 4556`
+```regex
+^(gold|xau)\\s+(buy|sell)\\s+([\\d.]+)$
+```
+
+**Detailed Signal**: `GOLD BUY NOW\nBuy at 4553-4556\nSL 4546\nTP 4559`
+```regex
+(gold|xau)\\s+(buy|sell)[\\s\\S]*?buy at\\s+([\\d.\\-]+)[\\s\\S]*?sl\\s+([\\d.]+)[\\s\\S]*?tp\\s+([\\d.]+)
+```
+```
+
+---
+
+## Error Handling
+
+### Telegram Disconnection
+- Show warning on dashboard via status chip
+- Attempt auto-reconnect with exponential backoff
+- Log disconnection event
+
+### Price API Failure
+- Show warning on dashboard via status chip
+- Continue using last known price
+- Log failure event
+
+### Trade Execution Errors
+- Paper trades: Close using last known price
+- Log error with full context
+- Notify via dashboard (trade status shows "Closed at last known price")
+
+### Missing SL/TP Timeout
+- After 5 minutes without SL/TP:
+  - Mark trade with warning status
+  - Enable manual close button
+  - Enable "Auto Close All Faulted" button
+
+---
+
+## Docker Configuration
+
+### Dockerfile (Single-Stage)
+```dockerfile
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci
+
+COPY . .
+
+RUN npm run build
+
+EXPOSE 3000
+
+CMD ["npm", "start"]
+```
+
+### docker-compose.yml
+```yaml
+version: '3.8'
+services:
+  paper-trading:
+    build: .
+    ports:
+      - "${PORT:-3000}:3000"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./.env:/app/.env
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+```
+
+---
+
+## File Structure
+
+```
+xau-copy-trade/
+├── src/
+│   ├── server/
+│   │   ├── index.ts              # Express app entry point
+│   │   ├── routes/
+│   │   │   ├── auth.ts           # MTProto auth endpoints
+│   │   │   ├── trades.ts         # Trade management endpoints
+│   │   │   ├── price.ts          # Price endpoints
+│   │   │   └── system.ts         # Status and logs endpoints
+│   │   ├── services/
+│   │   │   ├── telegram.ts       # Telegram client & signal parser
+│   │   │   ├── priceFeed.ts      # Price API polling
+│   │   │   ├── tradeManager.ts   # Trade execution & monitoring
+│   │   │   └── sessionStore.ts   # Session persistence
+│   │   ├── websocket/
+│   │   │   └── index.ts          # WebSocket server
+│   │   └── logger.ts             # Winston logger config
+│   ├── client/
+│   │   ├── src/
+│   │   │   ├── App.tsx
+│   │   │   ├── components/
+│   │   │   │   ├── PriceDisplay.tsx
+│   │   │   │   ├── StatusChips.tsx
+│   │   │   │   ├── OpenTradesTable.tsx
+│   │   │   │   ├── TradeHistory.tsx
+│   │   │   │   ├── PnLDisplay.tsx
+│   │   │   │   ├── EquityChart.tsx
+│   │   │   │   └── LogViewer.tsx
+│   │   │   ├── hooks/
+│   │   │   │   ├── usePrice.ts
+│   │   │   │   ├── useTrades.ts
+│   │   │   │   └── useWebSocket.ts
+│   │   │   └── styles/
+│   │   │       └── index.css     # Tailwind + custom theme
+│   │   └── index.html
+│   └── config/
+│       └── trade-templates.json
+├── data/                         # Session storage
+├── logs/                         # Log files
+├── .env
+├── .env.example
+├── Dockerfile
+├── docker-compose.yml
+├── package.json
+├── tsconfig.json
+└── README.md
+```
+
+---
+
+## Implementation Requirements
+
+### Priority 1 (Core Functionality)
+1. Express server with basic routes
+2. Telegram MTProto authentication flow
+3. Signal parsing with configurable templates
+4. Price feed polling
+5. Basic trade entry/exit logic
+6. SQLite database setup for trades
+
+### Priority 2 (Dashboard)
+1. React frontend with green/black theme
+2. Real-time price display
+3. Open trades table
+4. Service status chips
+5. WebSocket integration for live updates
+
+### Priority 3 (Advanced Features)
+1. Trade history section
+2. P&L calculations and display
+3. Equity curve chart
+4. Log viewer with filtering
+5. SL/TP timeout handling (5-min rule)
+6. Auto-close faulted trades
+
+### Priority 4 (Polish & Deployment)
+1. Responsive design
+2. Docker configuration
+3. .env.example template
+4. Error handling and warnings
+5. Documentation
+
+---
+
+## Testing & Validation
+
+- Include example trade messages in config for template validation
+- Add health check endpoint
+- Log all trade decisions with reasoning
+- Validate price feed connectivity on startup
+
+---
+
+## Notes for Implementation
+
+1. **Session Persistence**: Store Telegram session in `data/session.json` or SQLite to avoid re-authentication on restart
+2. **Non-Blocking Logs**: Use Winston's async transport or write streams
+3. **Price Feed Selection**: Research and document the chosen API's rate limits and reliability
+4. **Template Flexibility**: The template system should be robust enough to handle various channel formats
+5. **Future-Proofing**: Design trade manager to accept position sizing from dashboard config or message parsing (not just .env)
+
+---
+
+## Deliverables
+
+1. Complete, runnable application with all features
+2. `.env.example` with all configuration options documented
+3. `config/trade-templates.json` with detailed configuration walkthrough
+4. `README.md` with:
+   - Setup instructions
+   - Docker usage
+   - Configuration guide
+   - Template configuration tutorial
+5. Dockerfile and docker-compose.yml
+6. Clean, typed TypeScript code throughout

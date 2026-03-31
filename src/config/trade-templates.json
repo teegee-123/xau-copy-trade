@@ -1,0 +1,86 @@
+{
+  "channelConfig": {
+    "channelId": "-1001234567890",
+    "channelName": "XAU Signals Pro"
+  },
+  "entrySignalTemplate": {
+    "description": "Pattern to detect initial trade signal (e.g., 'gold buy 4556')",
+    "pattern": "^(gold|xau(?:usd)?)\\s+(buy|sell)\\s+([\\d.]+)$",
+    "flags": "i",
+    "extractionRules": {
+      "symbol": {
+        "group": 1,
+        "transform": "uppercase",
+        "mapping": {
+          "GOLD": "XAUUSD",
+          "XAU": "XAUUSD",
+          "XAUUSD": "XAUUSD"
+        }
+      },
+      "action": {
+        "group": 2,
+        "transform": "uppercase"
+      },
+      "maxEntryPrice": {
+        "group": 3,
+        "transform": "parseFloat"
+      }
+    },
+    "examples": [
+      {
+        "message": "gold buy 4556",
+        "extracted": { "symbol": "XAUUSD", "action": "BUY", "maxEntryPrice": 4556 }
+      },
+      {
+        "message": "XAUUSD SELL 4600",
+        "extracted": { "symbol": "XAUUSD", "action": "SELL", "maxEntryPrice": 4600 }
+      }
+    ]
+  },
+  "sltpSignalTemplate": {
+    "description": "Pattern to detect updated signal with SL/TP (edited message)",
+    "pattern": "(gold|xau(?:usd)?)\\s+(buy|sell)[\\s\\S]*?(?:entry|buy at)[\\s:]+([\\d.\\-]+)[\\s\\S]*?(?:sl|stop loss)[\\s:]+([\\d.]+)[\\s\\S]*?(?:tp|take profit)[\\s:]+([\\d.]+)",
+    "flags": "i",
+    "extractionRules": {
+      "symbol": {
+        "group": 1,
+        "transform": "uppercase",
+        "mapping": {
+          "GOLD": "XAUUSD",
+          "XAU": "XAUUSD",
+          "XAUUSD": "XAUUSD"
+        }
+      },
+      "action": {
+        "group": 2,
+        "transform": "uppercase"
+      },
+      "entryPriceRange": {
+        "group": 3,
+        "transform": "parseRange",
+        "description": "Parse '4553-4556' into { min: 4553, max: 4556 }"
+      },
+      "stopLoss": {
+        "group": 4,
+        "transform": "parseFloat"
+      },
+      "takeProfit": {
+        "group": 5,
+        "transform": "parseFloat",
+        "note": "If multiple TP values exist, use the first (lowest for BUY, highest for SELL)"
+      }
+    },
+    "examples": [
+      {
+        "message": "GOLD BUY NOW\nEntry: 4553-4556\nSL: 4546\nTP: 4559\nTP: 4565",
+        "extracted": {
+          "symbol": "XAUUSD",
+          "action": "BUY",
+          "entryPriceRange": { "min": 4553, "max": 4556 },
+          "stopLoss": 4546,
+          "takeProfit": 4559
+        }
+      }
+    ]
+  }
+}
