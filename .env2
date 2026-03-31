@@ -10,17 +10,17 @@ PORT=8000
 # ============================================
 
 # Your Telegram API ID (integer)
-TELEGRAM_API_ID=
+TELEGRAM_API_ID=20798351
 
 # Your Telegram API Hash (string)
-TELEGRAM_API_HASH=
+TELEGRAM_API_HASH=775d5d64481af3600f8641e8076bf7f1
 
 # Phone number for the Telegram account (with country code)
-TELEGRAM_PHONE=
+TELEGRAM_PHONE=+447529569447
 
 # Channel ID to monitor (use negative number for supergroups/channels)
 # To get channel ID: forward a message from the channel to @userinfobot
-TELEGRAM_CHANNEL_ID=
+TELEGRAM_CHANNEL_ID=-1001222394814
 
 # Session name for Telethon (default is fine)
 TELEGRAM_SESSION_NAME=xau_copy_trade
@@ -73,6 +73,14 @@ BINANCE_WS_URL=wss://fstream.binance.com/ws
 
 # Symbol for XAU/USD on Binance (XAUUSDT)
 BINANCE_SYMBOL=XAUUSDT
+
+# ============================================
+# Twelve Data API (Alternative Price Feed)
+# Get free API key from https://twelvedata.com/
+# ============================================
+
+# Twelve Data API Key (uncomment and add your key to use Twelve Data instead of Binance)
+TWELVE_DATA_API_KEY=6c6c632eed794e44a50c7c275ad11146
 
 # ============================================
 # Security
