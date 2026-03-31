@@ -2,11 +2,10 @@
 set -e
 
 echo "==> Installing root dependencies..."
-npm install --prefer-offline
+npm install
 
 echo "==> Installing client dependencies..."
 cd src/client
-rm -rf node_modules package-lock.json
 npm install
 
 echo "==> Building client..."
