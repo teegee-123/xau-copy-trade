@@ -16,6 +16,9 @@ import authRoutes from './routes/auth.js';
 import tradesRoutes from './routes/trades.js';
 import priceRoutes from './routes/price.js';
 import systemRoutes from './routes/system.js';
+import configRoutes from './routes/config.js';
+
+import { configService } from './services/configService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -43,6 +46,7 @@ app.use('/auth', authRoutes);
 app.use('/api/trades', tradesRoutes);
 app.use('/api/price', priceRoutes);
 app.use('/api', systemRoutes);
+app.use('/api/config', configRoutes);
 
 // Health check with memory info for Render monitoring
 app.get('/health', (req, res) => {
@@ -80,6 +84,10 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 async function bootstrap(): Promise<void> {
   try {
     logger.info('Starting Paper Trading Dashboard...');
+
+    // Initialize config service first
+    logger.info('Initializing config service...');
+    configService.initialize();
 
     // Initialize database
     logger.info('Initializing database...');

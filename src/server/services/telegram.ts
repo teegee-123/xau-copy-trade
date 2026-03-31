@@ -5,46 +5,28 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const { Api } = require('telegram');
 import logger from '../logger.js';
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { EventEmitter } from 'events';
 import dotenv from 'dotenv';
 import path from 'path';
+import { configService } from './configService.js';
+import type { SignalTemplate } from './configService.js';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const envPath = path.join(__dirname, '../../../.env');
 const envResult = dotenv.config({ path: envPath });
-logger.info('=== TELEGRAM.TS: dotenv loaded:', { 
-  parsed: envResult.parsed ? 'YES' : 'NO', 
+logger.info('=== TELEGRAM.TS: dotenv loaded:', {
+  parsed: envResult.parsed ? 'YES' : 'NO',
   apiId: process.env.TELEGRAM_API_ID ? 'SET' : 'EMPTY',
   apiHash: process.env.TELEGRAM_API_HASH ? 'SET' : 'EMPTY',
   phone: process.env.TELEGRAM_PHONE ? 'SET' : 'EMPTY'
 });
-// Try multiple possible locations for config file
-const configPaths = [
-  join(__dirname, '../../config/trade-templates.json'),
-  join(__dirname, '../../../src/config/trade-templates.json'),
-  join(process.cwd(), 'src/config/trade-templates.json'),
-];
-
-let tradeTemplates: { entrySignalTemplate: Record<string, unknown>; sltpSignalTemplate: Record<string, unknown> } | null = null;
-for (const configPath of configPaths) {
-  if (existsSync(configPath)) {
-    tradeTemplates = JSON.parse(readFileSync(configPath, 'utf-8'));
-    break;
-  }
-}
-
-if (!tradeTemplates) {
-  logger.error('Could not find trade-templates.json config file');
-  tradeTemplates = { entrySignalTemplate: {}, sltpSignalTemplate: {} };
-}
 
 const TELEGRAM_API_ID = process.env.TELEGRAM_API_ID || '';
 const TELEGRAM_API_HASH = process.env.TELEGRAM_API_HASH || '';
 const TELEGRAM_PHONE = process.env.TELEGRAM_PHONE || '';
-const TELEGRAM_CHANNEL_ID = process.env.TELEGRAM_CHANNEL_ID || '';
 const SESSION_FILE_PATH = process.env.SESSION_FILE_PATH || './data/session.json';
 
 export interface ParsedSignal {
@@ -78,19 +60,40 @@ export class TelegramService extends EventEmitter {
   private pendingCode: string = '';
   private stringSession: StringSession | null = null;
   private phoneCodeHash: string = '';
+  private currentChannelId: string = '';
 
   constructor() {
     super();
   }
 
   getStatus(): TelegramStatus {
-    return { ...this.status };
+    const config = configService.getChannelConfig();
+    return { 
+      ...this.status,
+      channelId: this.currentChannelId || config.channelId
+    };
   }
 
   async initialize(): Promise<void> {
     if (this.isConnecting) {
       return;
     }
+
+    // Get channel ID from config service
+    const channelConfig = configService.getChannelConfig();
+    this.currentChannelId = channelConfig.channelId;
+
+    // Listen for config changes
+    configService.on('channelChange', (newConfig) => {
+      const oldChannelId = this.currentChannelId;
+      this.currentChannelId = newConfig.channelId;
+      logger.info('Channel configuration updated', { 
+        oldChannelId, 
+        newChannelId: newConfig.channelId 
+      });
+      // Update status to reflect new channel
+      this.emit('statusChange', this.status);
+    });
 
     this.isConnecting = true;
 
@@ -129,7 +132,7 @@ export class TelegramService extends EventEmitter {
       this.status.connected = true;
       this.status.authenticated = true;
       this.status.phoneNumber = TELEGRAM_PHONE;
-      this.status.channelId = TELEGRAM_CHANNEL_ID;
+      this.status.channelId = this.currentChannelId;
 
       if (this.stringSession) {
         const savedSession = this.stringSession.save();
@@ -322,14 +325,14 @@ export class TelegramService extends EventEmitter {
       this.handleNewMessage(message);
     });
 
-    logger.info(`Listening for messages from channel ${TELEGRAM_CHANNEL_ID}`);
+    logger.info(`Listening for messages from channel ${this.currentChannelId}`);
   }
 
   private async handleNewMessage(message: unknown): Promise<void> {
     // Check if message is from our configured channel
     const msg = message as { chatId?: number | string; message?: string; id: number };
     const chatId = msg?.chatId?.toString() || '';
-    if (chatId !== TELEGRAM_CHANNEL_ID && chatId !== TELEGRAM_CHANNEL_ID.replace('-', '')) {
+    if (chatId !== this.currentChannelId && chatId !== this.currentChannelId.replace('-', '')) {
       return;
     }
 
@@ -352,12 +355,10 @@ export class TelegramService extends EventEmitter {
    * Parse a message using configured templates
    */
   parseSignal(text: string, messageId: number, isEdit: boolean): ParsedSignal | null {
-    if (!tradeTemplates) {
-      return null;
-    }
-    
+    const templates = configService.getTemplates();
+
     // Try SL/TP template first (more specific)
-    const sltpParsed = this.parseWithTemplate(text, tradeTemplates.sltpSignalTemplate);
+    const sltpParsed = this.parseWithTemplate(text, templates.sltpSignalTemplate);
     if (sltpParsed) {
       return {
         ...sltpParsed,
@@ -368,7 +369,7 @@ export class TelegramService extends EventEmitter {
     }
 
     // Try entry signal template
-    const entryParsed = this.parseWithTemplate(text, tradeTemplates.entrySignalTemplate);
+    const entryParsed = this.parseWithTemplate(text, templates.entrySignalTemplate);
     if (entryParsed) {
       return {
         ...entryParsed,
@@ -383,16 +384,16 @@ export class TelegramService extends EventEmitter {
 
   private parseWithTemplate(
     text: string,
-    template: Record<string, unknown>
+    template: SignalTemplate
   ): Partial<ParsedSignal> | null {
     try {
-      const pattern = template.pattern as string | undefined;
-      const flags = template.flags as string | undefined;
-      
+      const pattern = template.pattern;
+      const flags = template.flags;
+
       if (!pattern) {
         return null;
       }
-      
+
       const regex = new RegExp(pattern, flags || 'i');
       const match = text.match(regex);
 
@@ -401,7 +402,7 @@ export class TelegramService extends EventEmitter {
       }
 
       const result: Partial<ParsedSignal> = {};
-      const extractionRules = template.extractionRules as Record<string, { group: number; transform?: string; mapping?: Record<string, string> }> | undefined;
+      const extractionRules = template.extractionRules;
 
       if (!extractionRules) {
         return result;
@@ -469,12 +470,13 @@ export class TelegramService extends EventEmitter {
    * Get channel info
    */
   async getChannelInfo(): Promise<{ id: string; title: string } | null> {
-    if (!this.client || !TELEGRAM_CHANNEL_ID) {
+    const channelConfig = configService.getChannelConfig();
+    if (!this.client || !channelConfig.channelId) {
       return null;
     }
 
     try {
-      const entity = await this.client.getEntity(TELEGRAM_CHANNEL_ID);
+      const entity = await this.client.getEntity(channelConfig.channelId);
       const title = (entity as unknown as { title?: string }).title || 'Unknown';
       return {
         id: entity.id.toString(),

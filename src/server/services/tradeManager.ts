@@ -6,13 +6,12 @@ import { EventEmitter } from 'events';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import { configService } from './configService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '../../../.env') });
 
-const DEFAULT_LOT_SIZE = parseFloat(process.env.DEFAULT_LOT_SIZE || '0.1');
 const DEFAULT_SYMBOL = process.env.DEFAULT_SYMBOL || 'XAUUSD';
-const SL_TP_TIMEOUT_MINUTES = parseInt(process.env.SL_TP_TIMEOUT_MINUTES || '5', 10);
 const TRADING_ENABLED = process.env.TRADING_ENABLED !== 'false';
 
 export interface TradeUpdate {
@@ -35,20 +34,36 @@ export class TradeManagerService extends EventEmitter {
   private priceCheckInterval: NodeJS.Timeout | null = null;
   private faultCheckInterval: NodeJS.Timeout | null = null;
   private isTradingEnabled = TRADING_ENABLED;
+  private currentLotSize: number;
+  private currentSlTpTimeout: number;
 
   constructor() {
     super();
+    // Get initial config values
+    const tradingConfig = configService.getTradingConfig();
+    this.currentLotSize = tradingConfig.defaultLotSize;
+    this.currentSlTpTimeout = tradingConfig.slTpTimeoutMinutes;
   }
 
   async initialize(): Promise<void> {
     logger.info('Initializing trade manager');
-    
+
+    // Listen for config changes
+    configService.on('tradingChange', (newConfig) => {
+      this.currentLotSize = newConfig.defaultLotSize;
+      this.currentSlTpTimeout = newConfig.slTpTimeoutMinutes;
+      logger.info('Trading configuration updated', { 
+        lotSize: this.currentLotSize, 
+        slTpTimeout: this.currentSlTpTimeout 
+      });
+    });
+
     // Load existing open trades from database
     const openTrades = db.getOpenTrades();
     openTrades.forEach(trade => {
       this.activeTrades.set(trade.id, trade);
     });
-    
+
     logger.info(`Loaded ${openTrades.length} active trades from database`);
 
     // Start price monitoring for SL/TP checks
@@ -133,7 +148,7 @@ export class TradeManagerService extends EventEmitter {
    */
   private async openTrade(signal: ParsedSignal): Promise<Trade | null> {
     const currentPriceData = priceFeedService.getCurrentPrice();
-    
+
     if (!currentPriceData) {
       logger.warn('No price data available, cannot open trade');
       return null;
@@ -142,7 +157,7 @@ export class TradeManagerService extends EventEmitter {
     const currentPrice = currentPriceData.price;
     const entryPrice = signal.entryPrice || signal.maxEntryPrice!;
     const symbol = signal.symbol || DEFAULT_SYMBOL;
-    const lotSize = DEFAULT_LOT_SIZE;
+    const lotSize = this.currentLotSize;
 
     // Validate entry price
     if (signal.maxEntryPrice) {
@@ -175,14 +190,15 @@ export class TradeManagerService extends EventEmitter {
     });
 
     this.activeTrades.set(trade.id, trade);
-    
-    logger.info('Trade opened', { 
-      tradeId: trade.id, 
-      symbol: trade.symbol, 
+
+    logger.info('Trade opened', {
+      tradeId: trade.id,
+      symbol: trade.symbol,
       action: trade.action,
       entryPrice: trade.entryPrice,
       sl: trade.stopLoss,
       tp: trade.takeProfit,
+      lotSize,
     });
 
     this.emit('tradeUpdate', { trade, type: 'OPENED' } as TradeUpdate);
@@ -302,7 +318,7 @@ export class TradeManagerService extends EventEmitter {
    * Check for faulted trades (missing SL/TP after timeout)
    */
   private checkFaultedTrades(): void {
-    const faultedTrades = db.getFaultedTrades(SL_TP_TIMEOUT_MINUTES);
+    const faultedTrades = db.getFaultedTrades(this.currentSlTpTimeout);
     
     faultedTrades.forEach(trade => {
       if (trade.status !== 'FAULTED') {
@@ -366,7 +382,7 @@ export class TradeManagerService extends EventEmitter {
    * Close all faulted trades
    */
   async closeAllFaultedTrades(): Promise<{ closed: number; failed: number }> {
-    const faultedTrades = db.getFaultedTrades(SL_TP_TIMEOUT_MINUTES);
+    const faultedTrades = db.getFaultedTrades(this.currentSlTpTimeout);
     let closed = 0;
     let failed = 0;
 

@@ -1,8 +1,9 @@
 import logger from '../logger.js';
 import { EventEmitter } from 'events';
 import { priceScraperService, type ScrapedPriceData } from './priceScraper.js';
+import { configService } from './configService.js';
 
-const POLLING_INTERVAL_MS = 1000; // 1 second
+let POLLING_INTERVAL_MS = 1000; // Default 1 second, will be updated from config
 
 export interface PriceData {
   symbol: string;
@@ -68,6 +69,25 @@ export class PriceFeedService extends EventEmitter {
       return this.initPromise;
     }
 
+    // Get polling interval from config
+    const priceFeedConfig = configService.getPriceFeedConfig();
+    POLLING_INTERVAL_MS = priceFeedConfig.pollingIntervalMs;
+
+    // Listen for config changes
+    configService.on('priceFeedChange', (newConfig) => {
+      const oldInterval = POLLING_INTERVAL_MS;
+      POLLING_INTERVAL_MS = newConfig.pollingIntervalMs;
+      logger.info('Price feed configuration updated', { 
+        oldInterval, 
+        newInterval: POLLING_INTERVAL_MS 
+      });
+      // Restart polling with new interval
+      if (this.initialized && !this.isPolling) {
+        this.stopPolling();
+        this.startPolling();
+      }
+    });
+
     this.initPromise = (async () => {
       logger.info('Initializing robust price feed service...');
       logger.info('Sources: TradingView-WS, CommodityPriceAPI, API-Ninjas, TwelveData, Binance(PAXG), CoinGecko, TradingView-Scrape, Kitco');
@@ -100,10 +120,11 @@ export class PriceFeedService extends EventEmitter {
 
       // Start polling
       this.startPolling();
-      
-      logger.info('Price feed service initialized', { 
-        source: this.status.source, 
-        price: this.status.lastPrice 
+
+      logger.info('Price feed service initialized', {
+        source: this.status.source,
+        price: this.status.lastPrice,
+        pollingInterval: POLLING_INTERVAL_MS
       });
     })();
 

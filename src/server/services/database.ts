@@ -265,10 +265,20 @@ export class DatabaseService {
   // Cleanup old equity snapshots (keep last 30 days)
   cleanupOldSnapshots(): void {
     const stmt = this.db.prepare(`
-      DELETE FROM equity_snapshots 
+      DELETE FROM equity_snapshots
       WHERE timestamp < datetime('now', '-30 days')
     `);
     stmt.run();
+  }
+
+  // Get recent trades for template testing reference
+  getRecentTrades(limit: number = 10): Trade[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM trades
+      ORDER BY createdAt DESC
+      LIMIT ?
+    `);
+    return stmt.all(limit) as Trade[];
   }
 
   close() {

@@ -3,6 +3,7 @@ import { Server } from 'http';
 import { priceFeedService } from '../services/priceFeed.js';
 import { tradeManagerService } from '../services/tradeManager.js';
 import { telegramService } from '../services/telegram.js';
+import { configService } from '../services/configService.js';
 import logger from '../logger.js';
 
 interface CustomWebSocket extends WebSocket {
@@ -148,6 +149,14 @@ export class WebSocketService {
           type: 'price',
           status,
         },
+      });
+    });
+
+    // Config changes
+    configService.on('configChange', (configUpdate: { section: string; config: unknown }) => {
+      this.broadcast({
+        type: 'CONFIG_UPDATE',
+        data: configUpdate,
       });
     });
   }

@@ -71,8 +71,67 @@ export interface TradeUpdate {
 }
 
 export interface WebSocketMessage {
-  type: 'INIT' | 'PRICE_UPDATE' | 'TRADE_UPDATE' | 'STATUS_CHANGE';
+  type: 'INIT' | 'PRICE_UPDATE' | 'TRADE_UPDATE' | 'STATUS_CHANGE' | 'CONFIG_UPDATE';
   data: unknown;
 }
 
 export type EquityChartRange = '1D' | '1W' | '1M' | 'ALL';
+
+// Configuration types
+export interface ExtractionRule {
+  group: number;
+  transform: string;
+  mapping?: Record<string, string>;
+  description?: string;
+  note?: string;
+}
+
+export interface SignalTemplate {
+  description: string;
+  pattern: string;
+  flags: string;
+  extractionRules: Record<string, ExtractionRule>;
+  examples: Array<{
+    message: string;
+    extracted: Record<string, unknown>;
+  }>;
+}
+
+export interface ChannelConfig {
+  channelId: string;
+  channelName: string;
+}
+
+export interface TradingConfig {
+  defaultLotSize: number;
+  slTpTimeoutMinutes: number;
+}
+
+export interface PriceFeedConfig {
+  pollingIntervalMs: number;
+}
+
+export interface AppConfig {
+  channel: ChannelConfig;
+  entrySignalTemplate: SignalTemplate;
+  sltpSignalTemplate: SignalTemplate;
+  trading: TradingConfig;
+  priceFeed: PriceFeedConfig;
+}
+
+export interface TemplateTestResult {
+  matched: boolean;
+  extracted: Record<string, unknown> | null;
+  error?: string;
+}
+
+export interface HistoricalMessage {
+  id: number;
+  messageId: number | null;
+  symbol: string;
+  action: 'BUY' | 'SELL';
+  entryPrice: number;
+  stopLoss: number | null;
+  takeProfit: number | null;
+  createdAt: string;
+}
