@@ -5,7 +5,7 @@ services:
     region: oregon
     plan: free
     nodeVersion: '20'
-    buildCommand: npm install && npm run build
+    buildCommand: ./build.sh
     startCommand: node dist/server/index.js
     healthCheckPath: /health
     envVars:
@@ -43,3 +43,5 @@ services:
         value: "true"
       - key: SL_TP_TIMEOUT_MINUTES
         value: 5
+      - key: RENDER
+        value: "true"
