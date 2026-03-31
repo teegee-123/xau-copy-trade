@@ -36,6 +36,8 @@ services:
         sync: false
       - key: LOG_LEVEL
         value: info
+      - key: LOG_MAX_LINES
+        value: "1000"
       - key: TRADING_ENABLED
         value: "true"
       - key: SL_TP_TIMEOUT_MINUTES
