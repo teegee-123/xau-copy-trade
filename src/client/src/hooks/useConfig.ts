@@ -110,8 +110,10 @@ export function useConfig(): UseConfigReturn {
   // WebSocket connection for real-time config updates
   useEffect(() => {
     const connectWebSocket = () => {
-      const ws = new WebSocket(`ws://${window.location.host}/ws`);
-      
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws`;
+      const ws = new WebSocket(wsUrl);
+
       ws.onopen = () => {
         console.log('Config WebSocket connected');
       };

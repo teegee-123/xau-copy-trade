@@ -23,8 +23,20 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
 
   // Local state for form inputs
   const [channelConfig, setChannelConfig] = useState({ channelId: '', channelName: '' });
-  const [entryTemplate, setEntryTemplate] = useState<SignalTemplate | null>(null);
-  const [sltpTemplate, setSltpTemplate] = useState<SignalTemplate | null>(null);
+  const [entryTemplate, setEntryTemplate] = useState<SignalTemplate>({
+    description: '',
+    pattern: '',
+    flags: 'i',
+    extractionRules: {},
+    examples: [],
+  });
+  const [sltpTemplate, setSltpTemplate] = useState<SignalTemplate>({
+    description: '',
+    pattern: '',
+    flags: 'i',
+    extractionRules: {},
+    examples: [],
+  });
   const [tradingConfig, setTradingConfig] = useState({ defaultLotSize: 0.1, slTpTimeoutMinutes: 5 });
   const [priceFeedConfig, setPriceFeedConfig] = useState({ pollingIntervalMs: 1000 });
 
@@ -200,11 +212,11 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
           )}
 
           {/* Channel Tab */}
-          {activeTab === 'channel' && config && (
+          {activeTab === 'channel' && (
             <div className="space-y-6">
               <div>
                 <h3 className="text-lg font-semibold text-white mb-4">Telegram Channel Configuration</h3>
-                
+
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-text-muted mb-1">
@@ -251,7 +263,7 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
           )}
 
           {/* Entry Template Tab */}
-          {activeTab === 'entry' && entryTemplate && (
+          {activeTab === 'entry' && (
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-white">Entry Signal Template</h3>
@@ -271,7 +283,7 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
                   <input
                     type="text"
                     value={entryTemplate.description}
-                    onChange={(e) => setEntryTemplate(prev => prev ? { ...prev, description: e.target.value } : null)}
+                    onChange={(e) => setEntryTemplate(prev => ({ ...prev, description: e.target.value }))}
                     className="w-full bg-background border border-border-color rounded px-3 py-2 text-white focus:outline-none focus:border-primary"
                   />
                 </div>
@@ -285,7 +297,7 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
                       <input
                         type="text"
                         value={entryTemplate.pattern}
-                        onChange={(e) => setEntryTemplate(prev => prev ? { ...prev, pattern: e.target.value } : null)}
+                        onChange={(e) => setEntryTemplate(prev => ({ ...prev, pattern: e.target.value }))}
                         className="w-full bg-background border border-border-color rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-primary"
                         placeholder="^(gold|xau)\\s+(buy|sell)\\s+([\\d.]+)$"
                       />
@@ -301,7 +313,7 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
                       <input
                         type="text"
                         value={entryTemplate.flags}
-                        onChange={(e) => setEntryTemplate(prev => prev ? { ...prev, flags: e.target.value } : null)}
+                        onChange={(e) => setEntryTemplate(prev => ({ ...prev, flags: e.target.value }))}
                         className="w-full bg-background border border-border-color rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-primary"
                         placeholder="i"
                       />
@@ -319,7 +331,7 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
                         onChange={(e) => {
                           try {
                             const rules = JSON.parse(e.target.value);
-                            setEntryTemplate(prev => prev ? { ...prev, extractionRules: rules } : null);
+                            setEntryTemplate(prev => ({ ...prev, extractionRules: rules }));
                           } catch {}
                         }}
                         className="w-full bg-background border border-border-color rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-primary h-48"
@@ -332,13 +344,13 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
                 ) : (
                   <div className="p-4 bg-background rounded border border-border-color">
                     <p className="text-sm text-text-muted">
-                      <strong>Pattern:</strong> <code className="text-primary">{entryTemplate.pattern}</code>
+                      <strong>Pattern:</strong> <code className="text-primary">{entryTemplate.pattern || 'Not set'}</code>
                     </p>
                     <p className="text-sm text-text-muted mt-2">
                       <strong>Flags:</strong> {entryTemplate.flags || 'none'}
                     </p>
                     <p className="text-sm text-text-muted mt-2">
-                      <strong>Extraction Rules:</strong> {Object.keys(entryTemplate.extractionRules).join(', ')}
+                      <strong>Extraction Rules:</strong> {Object.keys(entryTemplate.extractionRules).length > 0 ? Object.keys(entryTemplate.extractionRules).join(', ') : 'None'}
                     </p>
                   </div>
                 )}
@@ -355,7 +367,7 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
           )}
 
           {/* SL/TP Template Tab */}
-          {activeTab === 'sltp' && sltpTemplate && (
+          {activeTab === 'sltp' && (
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-white">SL/TP Signal Template</h3>
@@ -375,7 +387,7 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
                   <input
                     type="text"
                     value={sltpTemplate.description}
-                    onChange={(e) => setSltpTemplate(prev => prev ? { ...prev, description: e.target.value } : null)}
+                    onChange={(e) => setSltpTemplate(prev => ({ ...prev, description: e.target.value }))}
                     className="w-full bg-background border border-border-color rounded px-3 py-2 text-white focus:outline-none focus:border-primary"
                   />
                 </div>
@@ -389,7 +401,7 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
                       <input
                         type="text"
                         value={sltpTemplate.pattern}
-                        onChange={(e) => setSltpTemplate(prev => prev ? { ...prev, pattern: e.target.value } : null)}
+                        onChange={(e) => setSltpTemplate(prev => ({ ...prev, pattern: e.target.value }))}
                         className="w-full bg-background border border-border-color rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-primary"
                       />
                       <p className="mt-1 text-xs text-text-muted">
@@ -404,7 +416,7 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
                       <input
                         type="text"
                         value={sltpTemplate.flags}
-                        onChange={(e) => setSltpTemplate(prev => prev ? { ...prev, flags: e.target.value } : null)}
+                        onChange={(e) => setSltpTemplate(prev => ({ ...prev, flags: e.target.value }))}
                         className="w-full bg-background border border-border-color rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-primary"
                       />
                       <p className="mt-1 text-xs text-text-muted">
@@ -421,7 +433,7 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
                         onChange={(e) => {
                           try {
                             const rules = JSON.parse(e.target.value);
-                            setSltpTemplate(prev => prev ? { ...prev, extractionRules: rules } : null);
+                            setSltpTemplate(prev => ({ ...prev, extractionRules: rules }));
                           } catch {}
                         }}
                         className="w-full bg-background border border-border-color rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-primary h-48"
@@ -434,13 +446,13 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
                 ) : (
                   <div className="p-4 bg-background rounded border border-border-color">
                     <p className="text-sm text-text-muted">
-                      <strong>Pattern:</strong> <code className="text-primary">{sltpTemplate.pattern}</code>
+                      <strong>Pattern:</strong> <code className="text-primary">{sltpTemplate.pattern || 'Not set'}</code>
                     </p>
                     <p className="text-sm text-text-muted mt-2">
                       <strong>Flags:</strong> {sltpTemplate.flags || 'none'}
                     </p>
                     <p className="text-sm text-text-muted mt-2">
-                      <strong>Extraction Rules:</strong> {Object.keys(sltpTemplate.extractionRules).join(', ')}
+                      <strong>Extraction Rules:</strong> {Object.keys(sltpTemplate.extractionRules).length > 0 ? Object.keys(sltpTemplate.extractionRules).join(', ') : 'None'}
                     </p>
                   </div>
                 )}
