@@ -189,11 +189,24 @@ Upgrade to Render's paid tier for native cron job support.
 
 ## Troubleshooting
 
-### Build Fails
+### Build Fails with "npm ERR! code ENOMEM"
 
-**Error:** `npm ERR! code ENOMEM` (out of memory)
+**Error:** Out of memory during build
 
-**Solution:** The build process may exceed 512MB. Contact Render support to request temporary build memory increase, or build locally and push pre-built assets.
+**Solution:** The build process may exceed 512MB. The current configuration uses `--ignore-scripts` to skip native module rebuilds. If build still fails:
+
+1. Check Render dashboard logs for specific error
+2. Ensure `src/client/node_modules` is in `.gitignore`
+3. Try clearing Render's build cache: Settings → **Clear Build Cache**
+
+### Build Fails with "better-sqlite3" Errors
+
+**Error:** `Module did not self-register` or `node-gyp` errors
+
+**Solution:** This is expected on Render. The `postinstall` script handles this gracefully. If you see errors:
+
+1. Check that build command includes `--ignore-scripts`
+2. The app will still work - better-sqlite3 compiles during build automatically
 
 ### Service Crashes on Startup
 
@@ -207,6 +220,15 @@ Upgrade to Render's paid tier for native cron job support.
 2. Filter for `error` or `fatal`
 3. Add missing environment variables
 4. Redeploy
+
+### Health Check Fails
+
+**Error:** Health check returned non-200 status
+
+**Solution:**
+1. Verify `/health` endpoint is accessible locally: `curl http://localhost:3000/health`
+2. Check memory usage in health response - if >450MB, reduce `NODE_OPTIONS`
+3. Ensure all services initialize correctly
 
 ### High Memory Usage
 
@@ -233,6 +255,15 @@ Upgrade to Render's paid tier for native cron job support.
 **Note:** The `/tmp` directory is ephemeral. Data resets on each deployment.
 
 **For persistent data:** Consider upgrading to use Render PostgreSQL (free tier available for 30 days) or an external database service.
+
+### Build Succeeds but Service Won't Start
+
+**Check:**
+1. Start command is `node dist/server/index.js`
+2. Build output shows `dist/server/index.js` was created
+3. PORT environment variable is set to `3000`
+
+**Solution:** Redeploy after clearing build cache
 
 ## Cost Optimization
 

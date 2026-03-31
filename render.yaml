@@ -4,7 +4,8 @@ services:
     env: node
     region: oregon
     plan: free
-    buildCommand: npm install && npm run build
+    nodeVersion: '20'
+    buildCommand: npm install --ignore-scripts && cd src/client && npm install --ignore-scripts && cd ../.. && npm run build:client && npm run build:server
     startCommand: node dist/server/index.js
     healthCheckPath: /health
     envVars:

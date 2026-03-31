@@ -1,0 +1,21 @@
+# Render deployment exclusions
+.git
+.gitignore
+.env
+.env.example
+.qwen
+logs/*
+!logs/.gitkeep
+data/*
+!data/.gitkeep
+dist/*
+src/client/dist/*
+src/client/node_modules/*
+node_modules/.cache
+*.md
+!README.md
+docs/
+Dockerfile
+docker-compose.yml
+generate-prompt.txt
+prompt.txt
