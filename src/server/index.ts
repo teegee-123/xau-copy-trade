@@ -118,7 +118,7 @@ async function shutdown(): Promise<void> {
 
   // Stop services
   tradeManagerService.stop();
-  priceFeedService.stopPolling();
+  priceFeedService.shutdown();
   await telegramService.disconnect();
   webSocketService.shutdown();
   db.close();
