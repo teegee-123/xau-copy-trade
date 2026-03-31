@@ -387,17 +387,49 @@ export class TelegramService extends EventEmitter {
     template: SignalTemplate
   ): Partial<ParsedSignal> | null {
     try {
-      const pattern = template.pattern;
-      const flags = template.flags;
+      const matchType = template.matchType || 'regex';
+      let match: RegExpExecArray | null = null;
+      let matched = false;
 
-      if (!pattern) {
-        return null;
+      if (matchType === 'regex') {
+        const pattern = template.pattern;
+        const flags = template.flags;
+
+        if (!pattern) {
+          return null;
+        }
+
+        const regex = new RegExp(pattern, flags || 'i');
+        match = regex.exec(text);
+        matched = match !== null;
+      } else {
+        // Simple string matching
+        if (!template.matchValue) {
+          return null;
+        }
+        const searchValue = template.caseSensitive
+          ? template.matchValue
+          : template.matchValue.toLowerCase();
+        const searchText = template.caseSensitive ? text : text.toLowerCase();
+
+        switch (matchType) {
+          case 'startswith':
+            matched = searchText.startsWith(searchValue);
+            break;
+          case 'endswith':
+            matched = searchText.endsWith(searchValue);
+            break;
+          case 'contains':
+            matched = searchText.includes(searchValue);
+            break;
+        }
+        // For simple matching, create a pseudo-match with full text as group 0
+        if (matched) {
+          match = [text] as RegExpExecArray;
+        }
       }
 
-      const regex = new RegExp(pattern, flags || 'i');
-      const match = text.match(regex);
-
-      if (!match) {
+      if (!matched) {
         return null;
       }
 
@@ -410,30 +442,69 @@ export class TelegramService extends EventEmitter {
 
       // Apply extraction rules
       for (const [field, rule] of Object.entries(extractionRules)) {
-        const groupValue = match[rule.group];
-        if (groupValue === undefined) {
+        let value: string | undefined;
+
+        // Get value from regex group or full match
+        if (rule.group !== undefined && match && match[rule.group]) {
+          value = match[rule.group];
+        } else if (match && match[0]) {
+          // Use full match if no group specified
+          value = match[0];
+        }
+
+        if (value === undefined) {
           continue;
         }
 
-        let transformedValue: unknown = groupValue;
+        let transformedValue: unknown = value;
 
         // Apply transformation
         switch (rule.transform) {
           case 'uppercase':
-            transformedValue = groupValue.toUpperCase();
+            transformedValue = value.toUpperCase();
+            break;
+          case 'lowercase':
+            transformedValue = value.toLowerCase();
             break;
           case 'parseFloat':
-            transformedValue = parseFloat(groupValue);
+            transformedValue = parseFloat(value);
             break;
           case 'parseRange':
-            const rangeMatch = groupValue.match(/([\d.]+)\s*-\s*([\d.]+)/);
+            const rangeMatch = value.match(/([\d.]+)\s*-\s*([\d.]+)/);
             if (rangeMatch) {
               transformedValue = {
                 min: parseFloat(rangeMatch[1]),
                 max: parseFloat(rangeMatch[2]),
               };
             } else {
-              transformedValue = parseFloat(groupValue);
+              transformedValue = parseFloat(value);
+            }
+            break;
+          case 'substring':
+            if (rule.startIndex !== undefined && rule.endIndex !== undefined) {
+              transformedValue = value.substring(rule.startIndex, rule.endIndex);
+            }
+            break;
+          case 'split':
+            if (rule.marker && rule.splitIndex !== undefined) {
+              const parts = value.split(rule.marker);
+              transformedValue = parts[rule.splitIndex];
+            }
+            break;
+          case 'after':
+            if (rule.marker) {
+              const index = value.indexOf(rule.marker);
+              if (index !== -1) {
+                transformedValue = value.substring(index + rule.marker.length);
+              }
+            }
+            break;
+          case 'before':
+            if (rule.marker) {
+              const index = value.indexOf(rule.marker);
+              if (index !== -1) {
+                transformedValue = value.substring(0, index);
+              }
             }
             break;
         }

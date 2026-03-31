@@ -19,9 +19,27 @@ const configPaths = [
 /**
  * Extraction Rule for template parsing
  */
+export type MatchType = 'regex' | 'startswith' | 'endswith' | 'contains';
+
+export type ExtractionTransform = 
+  | 'uppercase' 
+  | 'lowercase' 
+  | 'parseFloat' 
+  | 'parseRange' 
+  | 'substring' 
+  | 'split' 
+  | 'after' 
+  | 'before'
+  | 'parseInt'
+  | 'trim';
+
 export interface ExtractionRule {
-  group: number;
-  transform: string;
+  group?: number;  // For regex capture groups
+  transform: ExtractionTransform;
+  marker?: string;  // For after/before/split operations
+  startIndex?: number;  // For substring
+  endIndex?: number;  // For substring
+  splitIndex?: number;  // For split operation
   mapping?: Record<string, string>;
   description?: string;
   note?: string;
@@ -32,8 +50,14 @@ export interface ExtractionRule {
  */
 export interface SignalTemplate {
   description: string;
-  pattern: string;
-  flags: string;
+  // Regex mode (existing)
+  pattern?: string;
+  flags?: string;
+  // Simple match mode (new)
+  matchType?: MatchType;
+  matchValue?: string;  // The literal text to match for startswith/endswith/contains
+  caseSensitive?: boolean;  // Toggle for case sensitivity
+  // Extraction
   extractionRules: Record<string, ExtractionRule>;
   examples: Array<{
     message: string;
@@ -152,6 +176,7 @@ export class ConfigService extends EventEmitter {
   private getDefaultEntryTemplate(): SignalTemplate {
     return {
       description: 'Pattern to detect initial trade signal (e.g., "gold buy 4556")',
+      matchType: 'regex',
       pattern: '^(gold|xau(?:usd)?)\\s+(buy|sell)\\s+([\\d.]+)$',
       flags: 'i',
       extractionRules: {
@@ -192,6 +217,7 @@ export class ConfigService extends EventEmitter {
   private getDefaultSltpTemplate(): SignalTemplate {
     return {
       description: 'Pattern to detect updated signal with SL/TP (edited message)',
+      matchType: 'regex',
       pattern: '(gold|xau(?:usd)?)\\s+(buy|sell)[\\s\\S]*?(?:entry|buy at)[\\s:]+([\\d.\\-]+)[\\s\\S]*?(?:sl|stop loss)[\\s:]+([\\d.]+)[\\s\\S]*?(?:tp|take profit)[\\s:]+([\\d.]+)',
       flags: 'i',
       extractionRules: {
@@ -300,7 +326,7 @@ export class ConfigService extends EventEmitter {
   }
 
   /**
-   * Validate a regex pattern
+   * Validate a pattern based on match type
    */
   validatePattern(pattern: string, flags: string): { valid: boolean; error?: string } {
     try {
@@ -315,6 +341,30 @@ export class ConfigService extends EventEmitter {
   }
 
   /**
+   * Validate a template
+   */
+  validateTemplate(template: SignalTemplate): { valid: boolean; error?: string } {
+    const matchType = template.matchType || 'regex';
+
+    if (matchType === 'regex') {
+      if (!template.pattern) {
+        return { valid: false, error: 'Regex pattern is required' };
+      }
+      return this.validatePattern(template.pattern, template.flags || 'i');
+    } else {
+      // Simple match types
+      if (!template.matchValue) {
+        return { valid: false, error: 'Match value is required for ' + matchType };
+      }
+      if (template.matchValue.length === 0) {
+        return { valid: false, error: 'Match value cannot be empty' };
+      }
+    }
+
+    return { valid: true };
+  }
+
+  /**
    * Test a template against a message
    */
   testTemplate(
@@ -325,16 +375,16 @@ export class ConfigService extends EventEmitter {
     try {
       const template = customTemplate || this.config[`${templateType}SignalTemplate`];
 
-      if (!template || !template.pattern) {
+      if (!template) {
         return {
           matched: false,
           extracted: null,
-          error: 'Template not found or invalid',
+          error: 'Template not found',
         };
       }
 
-      // Validate pattern
-      const validation = this.validatePattern(template.pattern, template.flags);
+      // Validate template
+      const validation = this.validateTemplate(template);
       if (!validation.valid) {
         return {
           matched: false,
@@ -343,11 +393,53 @@ export class ConfigService extends EventEmitter {
         };
       }
 
-      // Create regex and test
-      const regex = new RegExp(template.pattern, template.flags);
-      const match = message.match(regex);
+      const matchType = template.matchType || 'regex';
+      let match: RegExpExecArray | null = null;
+      let matched = false;
 
-      if (!match) {
+      if (matchType === 'regex') {
+        if (!template.pattern) {
+          return {
+            matched: false,
+            extracted: null,
+            error: 'Pattern is required for regex matching',
+          };
+        }
+        const regex = new RegExp(template.pattern, template.flags || 'i');
+        match = regex.exec(message);
+        matched = match !== null;
+      } else {
+        // Simple string matching
+        if (!template.matchValue) {
+          return {
+            matched: false,
+            extracted: null,
+            error: 'Match value is required for ' + matchType + ' matching',
+          };
+        }
+        const searchValue = template.caseSensitive
+          ? template.matchValue
+          : template.matchValue.toLowerCase();
+        const searchText = template.caseSensitive ? message : message.toLowerCase();
+
+        switch (matchType) {
+          case 'startswith':
+            matched = searchText.startsWith(searchValue);
+            break;
+          case 'endswith':
+            matched = searchText.endsWith(searchValue);
+            break;
+          case 'contains':
+            matched = searchText.includes(searchValue);
+            break;
+        }
+        // For simple matching, create a pseudo-match with full text as group 0
+        if (matched) {
+          match = [message] as RegExpExecArray;
+        }
+      }
+
+      if (!matched) {
         return {
           matched: false,
           extracted: null,
@@ -357,52 +449,85 @@ export class ConfigService extends EventEmitter {
       // Extract values using extraction rules
       const extracted: Record<string, unknown> = {};
 
-      for (const [fieldName, rule] of Object.entries(template.extractionRules)) {
-        const groupValue = match[rule.group];
+      for (const [fieldName, rule] of Object.entries(template.extractionRules || {})) {
+        let value: string | undefined;
 
-        if (groupValue === undefined) {
-          continue;
+        // Get value from regex group or full match
+        if (rule.group !== undefined && match && match[rule.group]) {
+          value = match[rule.group];
+        } else if (match && match[0]) {
+          // Use full match if no group specified
+          value = match[0];
         }
 
-        let value: unknown = groupValue;
+        if (value === undefined) continue;
+
+        let transformedValue: unknown = value;
 
         // Apply transform
         switch (rule.transform) {
           case 'uppercase':
-            value = groupValue.toUpperCase();
+            transformedValue = value.toUpperCase();
             break;
           case 'lowercase':
-            value = groupValue.toLowerCase();
+            transformedValue = value.toLowerCase();
             break;
           case 'parseFloat':
-            value = parseFloat(groupValue);
+            transformedValue = parseFloat(value);
             break;
           case 'parseInt':
-            value = parseInt(groupValue, 10);
+            transformedValue = parseInt(value, 10);
             break;
           case 'parseRange':
             // Handle range like "4553-4556"
-            const rangeMatch = groupValue.match(/([\d.]+)\s*-\s*([\d.]+)/);
+            const rangeMatch = value.match(/([\d.]+)\s*-\s*([\d.]+)/);
             if (rangeMatch) {
-              value = {
+              transformedValue = {
                 min: parseFloat(rangeMatch[1]),
                 max: parseFloat(rangeMatch[2]),
               };
             } else {
-              value = parseFloat(groupValue);
+              transformedValue = parseFloat(value);
+            }
+            break;
+          case 'substring':
+            if (rule.startIndex !== undefined && rule.endIndex !== undefined) {
+              transformedValue = value.substring(rule.startIndex, rule.endIndex);
+            }
+            break;
+          case 'split':
+            if (rule.marker && rule.splitIndex !== undefined) {
+              const parts = value.split(rule.marker);
+              transformedValue = parts[rule.splitIndex];
+            }
+            break;
+          case 'after':
+            if (rule.marker) {
+              const index = value.indexOf(rule.marker);
+              if (index !== -1) {
+                transformedValue = value.substring(index + rule.marker.length);
+              }
+            }
+            break;
+          case 'before':
+            if (rule.marker) {
+              const index = value.indexOf(rule.marker);
+              if (index !== -1) {
+                transformedValue = value.substring(0, index);
+              }
             }
             break;
           case 'trim':
-            value = groupValue.trim();
+            transformedValue = value.trim();
             break;
         }
 
         // Apply mapping if exists
-        if (rule.mapping && typeof value === 'string' && value in rule.mapping) {
-          value = rule.mapping[value];
+        if (rule.mapping && typeof transformedValue === 'string' && transformedValue in rule.mapping) {
+          transformedValue = rule.mapping[transformedValue];
         }
 
-        extracted[fieldName] = value;
+        extracted[fieldName] = transformedValue;
       }
 
       return {

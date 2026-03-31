@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { useConfig } from '../hooks/useConfig';
 import { TemplateTester } from './TemplateTester';
-import type { SignalTemplate } from '../types';
+import type { SignalTemplate, MatchType } from '../types';
 
 interface ConfigPanelProps {
   onClose: () => void;
@@ -14,7 +14,7 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>('channel');
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  
+
   // Advanced mode toggle for template editing
   const [advancedMode, setAdvancedMode] = useState<{ entry: boolean; sltp: boolean }>({
     entry: false,
@@ -25,15 +25,21 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
   const [channelConfig, setChannelConfig] = useState({ channelId: '', channelName: '' });
   const [entryTemplate, setEntryTemplate] = useState<SignalTemplate>({
     description: '',
+    matchType: 'regex',
     pattern: '',
     flags: 'i',
+    matchValue: '',
+    caseSensitive: false,
     extractionRules: {},
     examples: [],
   });
   const [sltpTemplate, setSltpTemplate] = useState<SignalTemplate>({
     description: '',
+    matchType: 'regex',
     pattern: '',
     flags: 'i',
+    matchValue: '',
+    caseSensitive: false,
     extractionRules: {},
     examples: [],
   });
@@ -290,37 +296,99 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
 
                 {advancedMode.entry ? (
                   <>
+                    {/* Match Type Selection */}
                     <div>
                       <label className="block text-sm font-medium text-text-muted mb-1">
-                        Regex Pattern
+                        Match Type
                       </label>
-                      <input
-                        type="text"
-                        value={entryTemplate.pattern}
-                        onChange={(e) => setEntryTemplate(prev => ({ ...prev, pattern: e.target.value }))}
-                        className="w-full bg-background border border-border-color rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-primary"
-                        placeholder="^(gold|xau)\\s+(buy|sell)\\s+([\\d.]+)$"
-                      />
+                      <select
+                        value={entryTemplate.matchType || 'regex'}
+                        onChange={(e) => setEntryTemplate(prev => ({ ...prev, matchType: e.target.value as MatchType }))}
+                        className="w-full bg-background border border-border-color rounded px-3 py-2 text-white focus:outline-none focus:border-primary"
+                      >
+                        <option value="regex">Regex (Advanced Pattern Matching)</option>
+                        <option value="startswith">Starts With (Simple Text Match)</option>
+                        <option value="endswith">Ends With (Simple Text Match)</option>
+                        <option value="contains">Contains (Simple Text Match)</option>
+                      </select>
                       <p className="mt-1 text-xs text-text-muted">
-                        JavaScript regex pattern to match entry signals
+                        Choose between regex or simple string matching
                       </p>
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-text-muted mb-1">
-                        Flags
-                      </label>
-                      <input
-                        type="text"
-                        value={entryTemplate.flags}
-                        onChange={(e) => setEntryTemplate(prev => ({ ...prev, flags: e.target.value }))}
-                        className="w-full bg-background border border-border-color rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-primary"
-                        placeholder="i"
-                      />
-                      <p className="mt-1 text-xs text-text-muted">
-                        Regex flags (e.g., 'i' for case-insensitive)
-                      </p>
-                    </div>
+                    {/* Regex Mode Fields */}
+                    {(entryTemplate.matchType || 'regex') === 'regex' && (
+                      <>
+                        <div>
+                          <label className="block text-sm font-medium text-text-muted mb-1">
+                            Regex Pattern
+                          </label>
+                          <input
+                            type="text"
+                            value={entryTemplate.pattern}
+                            onChange={(e) => setEntryTemplate(prev => ({ ...prev, pattern: e.target.value }))}
+                            className="w-full bg-background border border-border-color rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-primary"
+                            placeholder="^(gold|xau)\\s+(buy|sell)\\s+([\\d.]+)$"
+                          />
+                          <p className="mt-1 text-xs text-text-muted">
+                            JavaScript regex pattern to match entry signals
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-text-muted mb-1">
+                            Flags
+                          </label>
+                          <input
+                            type="text"
+                            value={entryTemplate.flags}
+                            onChange={(e) => setEntryTemplate(prev => ({ ...prev, flags: e.target.value }))}
+                            className="w-full bg-background border border-border-color rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-primary"
+                            placeholder="i"
+                          />
+                          <p className="mt-1 text-xs text-text-muted">
+                            Regex flags (e.g., 'i' for case-insensitive)
+                          </p>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Simple Match Mode Fields */}
+                    {entryTemplate.matchType && entryTemplate.matchType !== 'regex' && (
+                      <>
+                        <div>
+                          <label className="block text-sm font-medium text-text-muted mb-1">
+                            Match Value
+                          </label>
+                          <input
+                            type="text"
+                            value={entryTemplate.matchValue}
+                            onChange={(e) => setEntryTemplate(prev => ({ ...prev, matchValue: e.target.value }))}
+                            className="w-full bg-background border border-border-color rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-primary"
+                            placeholder={entryTemplate.matchType === 'startswith' ? 'Text at start of message' : entryTemplate.matchType === 'endswith' ? 'Text at end of message' : 'Text to search for'}
+                          />
+                          <p className="mt-1 text-xs text-text-muted">
+                            The text to {entryTemplate.matchType === 'startswith' ? 'match at the start' : entryTemplate.matchType === 'endswith' ? 'match at the end' : 'search for'} in the message
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id="entry-case-sensitive"
+                            checked={entryTemplate.caseSensitive || false}
+                            onChange={(e) => setEntryTemplate(prev => ({ ...prev, caseSensitive: e.target.checked }))}
+                            className="rounded border-border-color bg-background text-primary focus:ring-primary"
+                          />
+                          <label htmlFor="entry-case-sensitive" className="text-sm text-text-muted">
+                            Case Sensitive
+                          </label>
+                          <p className="text-xs text-text-muted">
+                            When unchecked, matching is case-insensitive
+                          </p>
+                        </div>
+                      </>
+                    )}
 
                     <div>
                       <label className="block text-sm font-medium text-text-muted mb-1">
@@ -337,18 +405,34 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
                         className="w-full bg-background border border-border-color rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-primary h-48"
                       />
                       <p className="mt-1 text-xs text-text-muted">
-                        Define how to extract fields from regex capture groups
+                        Define how to extract fields from the matched text
                       </p>
                     </div>
                   </>
                 ) : (
                   <div className="p-4 bg-background rounded border border-border-color">
                     <p className="text-sm text-text-muted">
-                      <strong>Pattern:</strong> <code className="text-primary">{entryTemplate.pattern || 'Not set'}</code>
+                      <strong>Match Type:</strong> <span className="text-primary">{entryTemplate.matchType || 'regex'}</span>
                     </p>
-                    <p className="text-sm text-text-muted mt-2">
-                      <strong>Flags:</strong> {entryTemplate.flags || 'none'}
-                    </p>
+                    {(entryTemplate.matchType || 'regex') === 'regex' ? (
+                      <>
+                        <p className="text-sm text-text-muted mt-2">
+                          <strong>Pattern:</strong> <code className="text-primary">{entryTemplate.pattern || 'Not set'}</code>
+                        </p>
+                        <p className="text-sm text-text-muted mt-2">
+                          <strong>Flags:</strong> {entryTemplate.flags || 'none'}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm text-text-muted mt-2">
+                          <strong>Match Value:</strong> <code className="text-primary">{entryTemplate.matchValue || 'Not set'}</code>
+                        </p>
+                        <p className="text-sm text-text-muted mt-2">
+                          <strong>Case Sensitive:</strong> {entryTemplate.caseSensitive ? 'Yes' : 'No'}
+                        </p>
+                      </>
+                    )}
                     <p className="text-sm text-text-muted mt-2">
                       <strong>Extraction Rules:</strong> {Object.keys(entryTemplate.extractionRules).length > 0 ? Object.keys(entryTemplate.extractionRules).join(', ') : 'None'}
                     </p>
@@ -394,35 +478,97 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
 
                 {advancedMode.sltp ? (
                   <>
+                    {/* Match Type Selection */}
                     <div>
                       <label className="block text-sm font-medium text-text-muted mb-1">
-                        Regex Pattern
+                        Match Type
                       </label>
-                      <input
-                        type="text"
-                        value={sltpTemplate.pattern}
-                        onChange={(e) => setSltpTemplate(prev => ({ ...prev, pattern: e.target.value }))}
-                        className="w-full bg-background border border-border-color rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-primary"
-                      />
+                      <select
+                        value={sltpTemplate.matchType || 'regex'}
+                        onChange={(e) => setSltpTemplate(prev => ({ ...prev, matchType: e.target.value as MatchType }))}
+                        className="w-full bg-background border border-border-color rounded px-3 py-2 text-white focus:outline-none focus:border-primary"
+                      >
+                        <option value="regex">Regex (Advanced Pattern Matching)</option>
+                        <option value="startswith">Starts With (Simple Text Match)</option>
+                        <option value="endswith">Ends With (Simple Text Match)</option>
+                        <option value="contains">Contains (Simple Text Match)</option>
+                      </select>
                       <p className="mt-1 text-xs text-text-muted">
-                        JavaScript regex pattern to match SL/TP update signals
+                        Choose between regex or simple string matching
                       </p>
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-text-muted mb-1">
-                        Flags
-                      </label>
-                      <input
-                        type="text"
-                        value={sltpTemplate.flags}
-                        onChange={(e) => setSltpTemplate(prev => ({ ...prev, flags: e.target.value }))}
-                        className="w-full bg-background border border-border-color rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-primary"
-                      />
-                      <p className="mt-1 text-xs text-text-muted">
-                        Regex flags (e.g., 'i' for case-insensitive)
-                      </p>
-                    </div>
+                    {/* Regex Mode Fields */}
+                    {(sltpTemplate.matchType || 'regex') === 'regex' && (
+                      <>
+                        <div>
+                          <label className="block text-sm font-medium text-text-muted mb-1">
+                            Regex Pattern
+                          </label>
+                          <input
+                            type="text"
+                            value={sltpTemplate.pattern}
+                            onChange={(e) => setSltpTemplate(prev => ({ ...prev, pattern: e.target.value }))}
+                            className="w-full bg-background border border-border-color rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-primary"
+                          />
+                          <p className="mt-1 text-xs text-text-muted">
+                            JavaScript regex pattern to match SL/TP update signals
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-text-muted mb-1">
+                            Flags
+                          </label>
+                          <input
+                            type="text"
+                            value={sltpTemplate.flags}
+                            onChange={(e) => setSltpTemplate(prev => ({ ...prev, flags: e.target.value }))}
+                            className="w-full bg-background border border-border-color rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-primary"
+                          />
+                          <p className="mt-1 text-xs text-text-muted">
+                            Regex flags (e.g., 'i' for case-insensitive)
+                          </p>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Simple Match Mode Fields */}
+                    {sltpTemplate.matchType && sltpTemplate.matchType !== 'regex' && (
+                      <>
+                        <div>
+                          <label className="block text-sm font-medium text-text-muted mb-1">
+                            Match Value
+                          </label>
+                          <input
+                            type="text"
+                            value={sltpTemplate.matchValue}
+                            onChange={(e) => setSltpTemplate(prev => ({ ...prev, matchValue: e.target.value }))}
+                            className="w-full bg-background border border-border-color rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-primary"
+                            placeholder={sltpTemplate.matchType === 'startswith' ? 'Text at start of message' : sltpTemplate.matchType === 'endswith' ? 'Text at end of message' : 'Text to search for'}
+                          />
+                          <p className="mt-1 text-xs text-text-muted">
+                            The text to {sltpTemplate.matchType === 'startswith' ? 'match at the start' : sltpTemplate.matchType === 'endswith' ? 'match at the end' : 'search for'} in the message
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id="sltp-case-sensitive"
+                            checked={sltpTemplate.caseSensitive || false}
+                            onChange={(e) => setSltpTemplate(prev => ({ ...prev, caseSensitive: e.target.checked }))}
+                            className="rounded border-border-color bg-background text-primary focus:ring-primary"
+                          />
+                          <label htmlFor="sltp-case-sensitive" className="text-sm text-text-muted">
+                            Case Sensitive
+                          </label>
+                          <p className="text-xs text-text-muted">
+                            When unchecked, matching is case-insensitive
+                          </p>
+                        </div>
+                      </>
+                    )}
 
                     <div>
                       <label className="block text-sm font-medium text-text-muted mb-1">
@@ -439,18 +585,34 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
                         className="w-full bg-background border border-border-color rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-primary h-48"
                       />
                       <p className="mt-1 text-xs text-text-muted">
-                        Define how to extract fields from regex capture groups
+                        Define how to extract fields from the matched text
                       </p>
                     </div>
                   </>
                 ) : (
                   <div className="p-4 bg-background rounded border border-border-color">
                     <p className="text-sm text-text-muted">
-                      <strong>Pattern:</strong> <code className="text-primary">{sltpTemplate.pattern || 'Not set'}</code>
+                      <strong>Match Type:</strong> <span className="text-primary">{sltpTemplate.matchType || 'regex'}</span>
                     </p>
-                    <p className="text-sm text-text-muted mt-2">
-                      <strong>Flags:</strong> {sltpTemplate.flags || 'none'}
-                    </p>
+                    {(sltpTemplate.matchType || 'regex') === 'regex' ? (
+                      <>
+                        <p className="text-sm text-text-muted mt-2">
+                          <strong>Pattern:</strong> <code className="text-primary">{sltpTemplate.pattern || 'Not set'}</code>
+                        </p>
+                        <p className="text-sm text-text-muted mt-2">
+                          <strong>Flags:</strong> {sltpTemplate.flags || 'none'}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm text-text-muted mt-2">
+                          <strong>Match Value:</strong> <code className="text-primary">{sltpTemplate.matchValue || 'Not set'}</code>
+                        </p>
+                        <p className="text-sm text-text-muted mt-2">
+                          <strong>Case Sensitive:</strong> {sltpTemplate.caseSensitive ? 'Yes' : 'No'}
+                        </p>
+                      </>
+                    )}
                     <p className="text-sm text-text-muted mt-2">
                       <strong>Extraction Rules:</strong> {Object.keys(sltpTemplate.extractionRules).length > 0 ? Object.keys(sltpTemplate.extractionRules).join(', ') : 'None'}
                     </p>

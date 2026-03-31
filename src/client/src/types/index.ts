@@ -78,9 +78,27 @@ export interface WebSocketMessage {
 export type EquityChartRange = '1D' | '1W' | '1M' | 'ALL';
 
 // Configuration types
+export type MatchType = 'regex' | 'startswith' | 'endswith' | 'contains';
+
+export type ExtractionTransform = 
+  | 'uppercase' 
+  | 'lowercase' 
+  | 'parseFloat' 
+  | 'parseRange' 
+  | 'substring' 
+  | 'split' 
+  | 'after' 
+  | 'before'
+  | 'parseInt'
+  | 'trim';
+
 export interface ExtractionRule {
-  group: number;
-  transform: string;
+  group?: number;  // For regex capture groups
+  transform: ExtractionTransform;
+  marker?: string;  // For after/before/split operations
+  startIndex?: number;  // For substring
+  endIndex?: number;  // For substring
+  splitIndex?: number;  // For split operation
   mapping?: Record<string, string>;
   description?: string;
   note?: string;
@@ -88,8 +106,14 @@ export interface ExtractionRule {
 
 export interface SignalTemplate {
   description: string;
-  pattern: string;
-  flags: string;
+  // Regex mode (existing)
+  pattern?: string;
+  flags?: string;
+  // Simple match mode (new)
+  matchType?: MatchType;
+  matchValue?: string;  // The literal text to match for startswith/endswith/contains
+  caseSensitive?: boolean;  // Toggle for case sensitivity
+  // Extraction
   extractionRules: Record<string, ExtractionRule>;
   examples: Array<{
     message: string;

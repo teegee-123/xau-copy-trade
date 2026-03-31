@@ -262,17 +262,42 @@ export function TemplateTester({ entryTemplate, sltpTemplate }: TemplateTesterPr
         </h4>
         <div className="space-y-2 text-sm">
           <div>
-            <span className="text-text-muted">Pattern: </span>
-            <code className="text-primary font-mono">
-              {templateType === 'entry' ? entryTemplate.pattern : sltpTemplate.pattern}
-            </code>
-          </div>
-          <div>
-            <span className="text-text-muted">Flags: </span>
-            <span className="text-white">
-              {templateType === 'entry' ? entryTemplate.flags : sltpTemplate.flags}
+            <span className="text-text-muted">Match Type: </span>
+            <span className="text-white capitalize">
+              {templateType === 'entry' ? (entryTemplate.matchType || 'regex') : (sltpTemplate.matchType || 'regex')}
             </span>
           </div>
+          {(templateType === 'entry' ? entryTemplate.matchType : sltpTemplate.matchType) === 'regex' ? (
+            <>
+              <div>
+                <span className="text-text-muted">Pattern: </span>
+                <code className="text-primary font-mono">
+                  {templateType === 'entry' ? entryTemplate.pattern : sltpTemplate.pattern}
+                </code>
+              </div>
+              <div>
+                <span className="text-text-muted">Flags: </span>
+                <span className="text-white">
+                  {templateType === 'entry' ? entryTemplate.flags : sltpTemplate.flags}
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <span className="text-text-muted">Match Value: </span>
+                <code className="text-primary font-mono">
+                  {templateType === 'entry' ? entryTemplate.matchValue : sltpTemplate.matchValue}
+                </code>
+              </div>
+              <div>
+                <span className="text-text-muted">Case Sensitive: </span>
+                <span className="text-white">
+                  {templateType === 'entry' ? (entryTemplate.caseSensitive ? 'Yes' : 'No') : (sltpTemplate.caseSensitive ? 'Yes' : 'No')}
+                </span>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
