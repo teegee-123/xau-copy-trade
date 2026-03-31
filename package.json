@@ -17,7 +17,7 @@
     "start": "npm run build && node dist/server/index.js",
     "start:dist": "node dist/server/index.js",
     "start:render": "node dist/server/index.js",
-    "render:build": "npm install --ignore-scripts && cd src/client && npm install --ignore-scripts && cd ../.. && npm run build:client && npm run build:server",
+    "render:build": "cd src/client && npm install && npm run build && cd ../.. && npm run build:server",
     "healthcheck": "node render-healthcheck.js",
     "lint": "eslint src --ext .ts,.tsx",
     "postinstall": "node -e \"try { require('child_process').execSync('node-gyp rebuild', { cwd: 'node_modules/better-sqlite3', stdio: 'ignore' }); console.log('better-sqlite3 rebuilt'); } catch (e) { console.log('Skipping better-sqlite3 rebuild (expected on Render)'); }\" || exit 0"

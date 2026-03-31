@@ -6,7 +6,7 @@ services:
     region: oregon
     plan: free
     nodeVersion: '20'
-    buildCommand: ./build.sh
+    buildCommand: npm run render:build
     startCommand: node dist/server/index.js
     healthCheckPath: /health
     envVars:
