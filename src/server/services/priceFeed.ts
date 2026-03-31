@@ -1,6 +1,12 @@
 import axios from 'axios';
 import logger from '../logger.js';
 import { EventEmitter } from 'events';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, '../../../.env') });
 
 const PRICE_API_KEY = process.env.PRICE_API_KEY || '';
 const POLLING_INTERVAL_MS = 1000; // 1 second

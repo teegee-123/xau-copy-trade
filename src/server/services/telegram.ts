@@ -1,13 +1,26 @@
-import { Api, TelegramClient } from 'telegram';
+import { TelegramClient } from 'telegram';
 import { StringSession } from 'telegram/sessions/index.js';
 import type { NewMessageEvent } from 'telegram/events/NewMessage';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const { Api } = require('telegram');
 import logger from '../logger.js';
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { EventEmitter } from 'events';
+import dotenv from 'dotenv';
+import path from 'path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const envPath = path.join(__dirname, '../../../.env');
+const envResult = dotenv.config({ path: envPath });
+logger.info('=== TELEGRAM.TS: dotenv loaded:', { 
+  parsed: envResult.parsed ? 'YES' : 'NO', 
+  apiId: process.env.TELEGRAM_API_ID ? 'SET' : 'EMPTY',
+  apiHash: process.env.TELEGRAM_API_HASH ? 'SET' : 'EMPTY',
+  phone: process.env.TELEGRAM_PHONE ? 'SET' : 'EMPTY'
+});
 // Try multiple possible locations for config file
 const configPaths = [
   join(__dirname, '../../config/trade-templates.json'),
@@ -64,6 +77,7 @@ export class TelegramService extends EventEmitter {
   private isConnecting = false;
   private pendingCode: string = '';
   private stringSession: StringSession | null = null;
+  private phoneCodeHash: string = '';
 
   constructor() {
     super();
@@ -139,11 +153,31 @@ export class TelegramService extends EventEmitter {
    * Initialize auth flow - request code to be sent
    */
   async requestAuthCode(phone: string): Promise<{ success: boolean; message: string }> {
+    // Log current values for debugging
+    logger.info('requestAuthCode called', {
+      TELEGRAM_API_ID: TELEGRAM_API_ID ? '***' + TELEGRAM_API_ID.slice(-4) : 'EMPTY',
+      TELEGRAM_API_HASH: TELEGRAM_API_HASH ? '***' + TELEGRAM_API_HASH.slice(-4) : 'EMPTY',
+      phone
+    });
+    
+    // Validate API credentials
+    if (!TELEGRAM_API_ID || !TELEGRAM_API_HASH) {
+      logger.error('Missing Telegram API credentials');
+      return {
+        success: false,
+        message: 'TELEGRAM_API_ID or TELEGRAM_API_HASH not configured',
+      };
+    }
+
     try {
-      const stringSession = new StringSession('');
+      // Create and store string session for later use in verifyCode
+      this.stringSession = new StringSession('');
+      const apiIdNum = parseInt(TELEGRAM_API_ID) || 0;
+      logger.info('Creating TelegramClient', { apiIdNum, apiHashLength: TELEGRAM_API_HASH.length });
+      
       this.client = new TelegramClient(
-        stringSession,
-        parseInt(TELEGRAM_API_ID) || 0,
+        this.stringSession,
+        apiIdNum,
         TELEGRAM_API_HASH,
         {
           connectionRetries: 3,
@@ -152,19 +186,26 @@ export class TelegramService extends EventEmitter {
       );
 
       await this.client.connect();
-      
-      // Send code request
+      logger.info('Telegram client connected');
+
+      // Send code request - apiId and apiHash are already in the client
+      logger.info('Sending Api.auth.SendCode', {
+        phoneNumber: phone,
+      });
       const sentCode = await this.client.invoke(
         new Api.auth.SendCode({
           phoneNumber: phone,
-          apiId: parseInt(TELEGRAM_API_ID) || 0,
+          apiId: apiIdNum,
           apiHash: TELEGRAM_API_HASH,
+          settings: new Api.CodeSettings({}),
         })
       );
 
       if (sentCode instanceof Api.auth.SentCode) {
         logger.info(`Auth code sent to ${phone}`);
         this.status.phoneNumber = phone;
+        // Store the phone code hash for verification
+        this.phoneCodeHash = sentCode.phoneCodeHash;
         this.emit('statusChange', this.status);
         return {
           success: true,
@@ -177,7 +218,7 @@ export class TelegramService extends EventEmitter {
         message: 'Failed to send verification code',
       };
     } catch (error) {
-      logger.error('Error requesting auth code', { error });
+      logger.error('Error requesting auth code', { error, stack: error instanceof Error ? error.stack : 'unknown' });
       return {
         success: false,
         message: error instanceof Error ? error.message : 'Failed to request code',
@@ -190,42 +231,53 @@ export class TelegramService extends EventEmitter {
    */
   async verifyCode(code: string): Promise<{ success: boolean; session?: string; error?: string }> {
     if (!this.client) {
-      return { success: false, error: 'Client not initialized' };
+      return { success: false, error: 'Client not initialized. Please request a code first.' };
+    }
+
+    if (!this.stringSession) {
+      return { success: false, error: 'Session not initialized. Please request a code first.' };
+    }
+
+    if (!this.phoneCodeHash) {
+      return { success: false, error: 'Phone code hash not found. Please request a code first.' };
     }
 
     try {
+      logger.info('Verifying Telegram code', { phoneNumber: this.status.phoneNumber });
+      
       const auth = await this.client.invoke(
         new Api.auth.SignIn({
           phoneNumber: this.status.phoneNumber || TELEGRAM_PHONE,
           phoneCode: code,
+          phoneCodeHash: this.phoneCodeHash,
         })
       );
 
       if (auth instanceof Api.auth.Authorization) {
-        if (this.stringSession) {
-          const sessionString = this.stringSession.save();
-          this.saveSession(sessionString);
+        const sessionString = this.stringSession.save();
+        this.saveSession(sessionString);
 
-          this.status.connected = true;
-          this.status.authenticated = true;
-          this.emit('statusChange', this.status);
+        this.status.connected = true;
+        this.status.authenticated = true;
+        this.status.error = undefined;
+        this.emit('statusChange', this.status);
 
-          logger.info('Telegram authentication successful');
-          this.emit('authenticated');
+        logger.info('Telegram authentication successful');
+        this.emit('authenticated');
 
-          // Start listening for messages
-          this.listenForMessages();
+        // Start listening for messages
+        this.listenForMessages();
 
-          return { success: true, session: sessionString };
-        }
+        return { success: true, session: sessionString };
       }
 
       return { success: false, error: 'Invalid authentication response' };
     } catch (error) {
-      logger.error('Error verifying code', { error });
+      const errorMsg = error instanceof Error ? error.message : 'Invalid code';
+      logger.error('Error verifying code', { error, stack: error instanceof Error ? error.stack : 'unknown', codeLength: code.length });
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Invalid code',
+        error: errorMsg,
       };
     }
   }
@@ -276,7 +328,7 @@ export class TelegramService extends EventEmitter {
   private async handleNewMessage(message: unknown): Promise<void> {
     // Check if message is from our configured channel
     const msg = message as { chatId?: number | string; message?: string; id: number };
-    const chatId = msg.chatId?.toString() || '';
+    const chatId = msg?.chatId?.toString() || '';
     if (chatId !== TELEGRAM_CHANNEL_ID && chatId !== TELEGRAM_CHANNEL_ID.replace('-', '')) {
       return;
     }

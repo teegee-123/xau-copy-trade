@@ -1,22 +1,46 @@
 import { Router } from 'express';
 import { telegramService } from '../services/telegram.js';
 import logger from '../logger.js';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, '../../../.env') });
 
 const router = Router();
 
 /**
- * POST /auth/request
+ * GET /auth/request
  * Request verification code from Telegram
- * Query: phone (optional, uses env if not provided)
+ * Uses TELEGRAM_PHONE from .env (query param ignored)
  */
 router.get('/request', async (req, res) => {
   try {
-    const phone = req.query.phone as string || process.env.TELEGRAM_PHONE || '';
-    
+    // Always use phone from .env file
+    const phone = process.env.TELEGRAM_PHONE || '';
+    const apiId = process.env.TELEGRAM_API_ID || '';
+    const apiHash = process.env.TELEGRAM_API_HASH || '';
+
+    // Debug logging
+    logger.info('Auth request - env values', { 
+      phone: phone ? '***' + phone.slice(-4) : 'EMPTY',
+      apiId: apiId || 'EMPTY',
+      apiHash: apiHash ? '***' + apiHash.slice(-4) : 'EMPTY'
+    });
+
+    // Validate required credentials
+    if (!apiId || !apiHash) {
+      return res.status(400).json({
+        success: false,
+        error: 'TELEGRAM_API_ID or TELEGRAM_API_HASH not configured in .env'
+      });
+    }
+
     if (!phone) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Phone number required. Provide via query param or .env' 
+      return res.status(400).json({
+        success: false,
+        error: 'TELEGRAM_PHONE not configured in .env'
       });
     }
 
@@ -30,9 +54,9 @@ router.get('/request', async (req, res) => {
     }
   } catch (error) {
     logger.error('Auth request error', { error });
-    res.status(500).json({ 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Failed to request code' 
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to request code'
     });
   }
 });

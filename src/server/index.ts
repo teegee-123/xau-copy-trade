@@ -17,10 +17,11 @@ import tradesRoutes from './routes/trades.js';
 import priceRoutes from './routes/price.js';
 import systemRoutes from './routes/system.js';
 
-// Load environment variables
-dotenv.config();
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Load environment variables with explicit path
+dotenv.config({ path: path.join(__dirname, '../../.env') });
+
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
 // Create Express app

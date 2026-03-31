@@ -3,6 +3,12 @@ import { priceFeedService } from './priceFeed.js';
 import { ParsedSignal } from './telegram.js';
 import logger from '../logger.js';
 import { EventEmitter } from 'events';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, '../../../.env') });
 
 const DEFAULT_LOT_SIZE = parseFloat(process.env.DEFAULT_LOT_SIZE || '0.1');
 const DEFAULT_SYMBOL = process.env.DEFAULT_SYMBOL || 'XAUUSD';
