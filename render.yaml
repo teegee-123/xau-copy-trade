@@ -5,7 +5,7 @@ services:
     region: oregon
     plan: free
     nodeVersion: '20'
-    buildCommand: npm install && cd src/client && npm install && cd ../.. && npm run build
+    buildCommand: npm ci && cd src/client && npm ci && cd ../.. && npm run build
     startCommand: node dist/server/index.js
     healthCheckPath: /health
     envVars:
