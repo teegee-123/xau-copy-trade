@@ -221,6 +221,42 @@ Upgrade to Render's paid tier for native cron job support.
 3. Add missing environment variables
 4. Redeploy
 
+### WebSocket "Insufficient resources" Error
+
+**Error:** `WebSocket connection failed: Insufficient resources`
+
+This error occurs when Render's free tier (512MB RAM) runs low on resources for WebSocket connections.
+
+**Solutions:**
+
+1. **Check connection limits** - The server now limits to 10 concurrent connections. Close unused browser tabs.
+
+2. **Verify origin validation** - Ensure you're accessing from an allowed origin:
+   - `localhost` (development)
+   - `*.onrender.com` (production)
+
+3. **Check for stale connections** - The server automatically cleans up stale connections every 15 seconds. If issues persist:
+   - Refresh the page
+   - Clear browser cache
+   - Wait 30 seconds before reconnecting
+
+4. **Monitor memory usage** - Check the health endpoint:
+   ```bash
+   curl https://your-app.onrender.com/health
+   ```
+   If memory > 450MB, consider:
+   - Reducing `NODE_OPTIONS` to `--max-old-space-size=350`
+   - Upgrading to paid plan
+
+5. **Handle capacity errors** - The client now handles "Server at capacity" (code 4004) by waiting 30 seconds before retry.
+
+6. **Tab visibility optimization** - The client pauses reconnection when the browser tab is hidden to save resources.
+
+**Prevention:**
+- Keep only one dashboard tab open
+- Use browser's resource monitoring to check memory
+- Consider upgrading to Render Starter plan ($7/month) for production use
+
 ### Health Check Fails
 
 **Error:** Health check returned non-200 status

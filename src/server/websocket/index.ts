@@ -12,6 +12,14 @@ interface CustomWebSocket extends WebSocket {
   id?: string;
 }
 
+// Configuration for Render free tier optimization
+const WS_CONFIG = {
+  MAX_CONNECTIONS: 10,           // Limit concurrent connections for 512MB RAM
+  HEARTBEAT_INTERVAL: 15000,     // 15s heartbeat (shorter for faster cleanup)
+  PING_TIMEOUT: 10000,           // 10s timeout for ping response
+  ORIGIN_WHITIST: ['localhost', '127.0.0.1', '.onrender.com'],  // Allowed origins
+};
+
 export class WebSocketService {
   private wss: WebSocketServer | null = null;
   private clients: Map<string, CustomWebSocket> = new Map();
@@ -23,23 +31,48 @@ export class WebSocketService {
       server,
       path: '/ws',
       perMessageDeflate: false,
-      // Allow all origins for development and Render
-      // In production behind a proxy, you may want to validate origin header
+      clientTracking: true,
+      // Origin validation handled in connection handler
     });
 
     this.wss.on('connection', (ws: CustomWebSocket, request: IncomingMessage) => {
       const origin = request.headers.origin;
       const ip = request.socket.remoteAddress;
-      logger.info('[WebSocket] Connection attempt', { 
+      
+      // Validate origin
+      if (!this.isOriginAllowed(origin)) {
+        logger.warn('[WebSocket] Connection rejected - origin not allowed', { origin });
+        ws.close(4003, 'Origin not allowed');
+        return;
+      }
+
+      // Check connection limit
+      if (this.clients.size >= WS_CONFIG.MAX_CONNECTIONS) {
+        logger.warn('[WebSocket] Connection rejected - max connections reached', {
+          current: this.clients.size,
+          max: WS_CONFIG.MAX_CONNECTIONS,
+          origin: origin || 'unknown'
+        });
+        ws.close(4004, 'Server at capacity');
+        return;
+      }
+
+      logger.info('[WebSocket] Connection attempt', {
         origin: origin || 'unknown',
         ip: ip || 'unknown',
-        url: request.url
+        url: request.url,
+        currentConnections: this.clients.size
       });
+      
       this.handleConnection(ws);
     });
 
     this.wss.on('error', (error) => {
       logger.error('[WebSocket] Server error', { error: error.message });
+    });
+
+    this.wss.on('close', () => {
+      logger.info('[WebSocket] WebSocket server closed');
     });
 
     // Start heartbeat to clean up stale connections
@@ -48,7 +81,33 @@ export class WebSocketService {
     // Subscribe to service events
     this.subscribeToEvents();
 
-    logger.info('[WebSocket] Server initialized');
+    logger.info('[WebSocket] Server initialized', {
+      maxConnections: WS_CONFIG.MAX_CONNECTIONS,
+      heartbeatInterval: WS_CONFIG.HEARTBEAT_INTERVAL
+    });
+  }
+
+  /**
+   * Validate if origin is allowed
+   */
+  private isOriginAllowed(origin?: string): boolean {
+    if (!origin) return true; // Allow requests without origin (e.g., mobile apps, curl)
+    
+    try {
+      const url = new URL(origin);
+      const hostname = url.hostname.toLowerCase();
+      
+      // Check whitelist
+      return WS_CONFIG.ORIGIN_WHITIST.some(allowed => {
+        if (allowed.startsWith('.')) {
+          // Subdomain match (e.g., .onrender.com matches xau-copy-trade.onrender.com)
+          return hostname.endsWith(allowed);
+        }
+        return hostname === allowed;
+      });
+    } catch {
+      return false; // Invalid URL
+    }
   }
 
   private startHeartbeat(): void {
@@ -60,6 +119,7 @@ export class WebSocketService {
         if (ws.isAlive === false) {
           deadClients.push(id);
           ws.terminate();
+          logger.debug('[WebSocket] Terminated stale client', { connectionId: id });
           return;
         }
 
@@ -71,7 +131,14 @@ export class WebSocketService {
       deadClients.forEach((id) => {
         this.clients.delete(id);
       });
-    }, 30000);
+
+      if (deadClients.length > 0) {
+        logger.info('[WebSocket] Cleaned up stale connections', {
+          count: deadClients.length,
+          remaining: this.clients.size
+        });
+      }
+    }, WS_CONFIG.HEARTBEAT_INTERVAL);
   }
 
   private handleConnection(ws: CustomWebSocket): void {
@@ -88,20 +155,15 @@ export class WebSocketService {
     }
 
     this.clients.set(connectionId, ws);
-    logger.info('[WebSocket] Client connected', { 
+    logger.info('[WebSocket] Client connected', {
       totalClients: this.clients.size,
       connectionId,
       timestamp: new Date().toISOString()
     });
 
-    ws.on('pong', () => {
-      ws.isAlive = true;
-      logger.debug('[WebSocket] Received pong', { connectionId });
-    });
-
     ws.on('close', (code, reason) => {
       if (this.clients.delete(connectionId)) {
-        logger.info('[WebSocket] Client disconnected', { 
+        logger.info('[WebSocket] Client disconnected', {
           totalClients: this.clients.size,
           connectionId,
           code,
@@ -111,13 +173,25 @@ export class WebSocketService {
     });
 
     ws.on('error', (error) => {
-      // Log WebSocket errors for debugging
-      logger.warn('[WebSocket] Client error', {
+      logger.debug('[WebSocket] Client error', {
         error: error.message,
         connectionId,
         readyState: ws.readyState
       });
       // Don't immediately remove - let close handler do it
+    });
+
+    // Set ping timeout - close if no response within timeout
+    const pingTimeout = setTimeout(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        logger.warn('[WebSocket] Client ping timeout, closing', { connectionId });
+        ws.close(4001, 'Ping timeout');
+      }
+    }, WS_CONFIG.PING_TIMEOUT);
+
+    ws.on('pong', () => {
+      ws.isAlive = true;
+      clearTimeout(pingTimeout);
     });
 
     // Send initial status

@@ -9,6 +9,7 @@ services:
     buildCommand: npm run render:build
     startCommand: node dist/server/index.js
     healthCheckPath: /health
+    autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
@@ -46,3 +47,7 @@ services:
         value: 5
       - key: RENDER
         value: "true"
+      - key: WS_MAX_CONNECTIONS
+        value: "10"
+      - key: WS_HEARTBEAT_INTERVAL
+        value: "15000"

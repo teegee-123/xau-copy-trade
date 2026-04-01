@@ -14,12 +14,29 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isConnectedRef = useRef(false);
   const reconnectAttemptsRef = useRef(0);
-  const maxReconnectAttempts = 5;
-  const reconnectDelay = 3000;
-  const initialReconnectDelay = 2000; // Longer initial delay after auth
+  const maxReconnectAttempts = 3;  // Reduced for Render free tier
+  const reconnectDelay = 5000;     // 5s base delay
   const optionsRef = useRef(options);
   const lastErrorTimeRef = useRef<number>(0);
   const errorCountRef = useRef(0);
+  const isTabVisibleRef = useRef(true);
+
+  // Track tab visibility to pause reconnection when hidden
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      isTabVisibleRef.current = document.visibilityState === 'visible';
+      
+      // Reconnect when tab becomes visible again
+      if (isTabVisibleRef.current && !isConnectedRef.current) {
+        console.log('[WebSocket] Tab visible, attempting reconnection');
+        reconnectAttemptsRef.current = 0;  // Reset attempts
+        connect();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
 
   // Keep options ref updated
   useEffect(() => {
@@ -38,6 +55,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
+    }
+
+    // Don't reconnect if tab is hidden (save resources)
+    if (!isTabVisibleRef.current) {
+      console.debug('[WebSocket] Skipping connection - tab is hidden');
+      return;
     }
 
     // Check max reconnect attempts
@@ -99,11 +122,21 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       const code = event.code;
       console.log(`[WebSocket] Disconnected (code: ${code}, reason: ${reason})`);
       isConnectedRef.current = false;
-      
+
       // Clear the reference to the closed WebSocket
       wsRef.current = null;
-      
+
       optionsRef.current.onDisconnect?.();
+
+      // Handle capacity errors specially - wait longer before retry
+      if (code === 4004) {
+        console.warn('[WebSocket] Server at capacity, waiting 30s before retry');
+        reconnectAttemptsRef.current = 0;  // Reset to allow retry
+        reconnectTimeoutRef.current = setTimeout(() => {
+          connect();
+        }, 30000);
+        return;
+      }
 
       // Only reconnect for abnormal closures
       // Code 1000 = normal closure, 1001 = going away, 1006 = abnormal (no close frame)
@@ -113,18 +146,22 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
           console.warn('[WebSocket] Max reconnect attempts reached, stopping reconnection');
           return;
         }
-        
+
         reconnectAttemptsRef.current++;
-        const baseDelay = reconnectAttemptsRef.current === 1 
-          ? initialReconnectDelay 
-          : reconnectDelay * Math.min(reconnectAttemptsRef.current, 5);
         
-        // Add random jitter (0-1 second) to prevent thundering herd
-        const jitter = Math.random() * 1000;
+        // Exponential backoff: 5s, 15s, 30s
+        const baseDelay = reconnectAttemptsRef.current === 1
+          ? reconnectDelay
+          : reconnectAttemptsRef.current === 2
+            ? reconnectDelay * 3
+            : reconnectDelay * 6;
+
+        // Add random jitter (0-2 seconds) to prevent thundering herd
+        const jitter = Math.random() * 2000;
         const delay = baseDelay + jitter;
-        
+
         console.log(`[WebSocket] Scheduling reconnect in ${Math.round(delay)}ms (attempt ${reconnectAttemptsRef.current})`);
-        
+
         reconnectTimeoutRef.current = setTimeout(() => {
           connect();
         }, delay);
@@ -135,25 +172,21 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       // Rate limit error logging to avoid spam
       const now = Date.now();
       const timeSinceLastError = now - lastErrorTimeRef.current;
-      
+
       // Only log if it's been more than 5 seconds or it's a new error burst
       if (timeSinceLastError > 5000) {
         errorCountRef.current = 0;
       }
-      
+
       lastErrorTimeRef.current = now;
       errorCountRef.current++;
-      
+
       // Suppress error logging during expected reconnection scenarios
-      // (e.g., server restart, Render sleep, post-auth reconnection)
       if (errorCountRef.current <= 3 && reconnectAttemptsRef.current < maxReconnectAttempts) {
-        // Silent - expected reconnection
         console.debug('[WebSocket] Connection error, will retry...');
       } else if (errorCountRef.current === 4) {
-        // Log once after several silent failures
         console.warn('[WebSocket] Multiple connection errors, server may be unavailable');
       }
-      // Subsequent errors are silent until reset
     };
 
     wsRef.current = ws;
