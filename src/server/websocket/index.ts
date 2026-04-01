@@ -1,5 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { Server } from 'http';
+import type { Server } from 'http';
+import type { IncomingMessage } from 'http';
 import { priceFeedService } from '../services/priceFeed.js';
 import { tradeManagerService } from '../services/tradeManager.js';
 import { telegramService } from '../services/telegram.js';
@@ -22,9 +23,18 @@ export class WebSocketService {
       server,
       path: '/ws',
       perMessageDeflate: false,
+      // Allow all origins for development and Render
+      // In production behind a proxy, you may want to validate origin header
     });
 
-    this.wss.on('connection', (ws: CustomWebSocket) => {
+    this.wss.on('connection', (ws: CustomWebSocket, request: IncomingMessage) => {
+      const origin = request.headers.origin;
+      const ip = request.socket.remoteAddress;
+      logger.info('[WebSocket] Connection attempt', { 
+        origin: origin || 'unknown',
+        ip: ip || 'unknown',
+        url: request.url
+      });
       this.handleConnection(ws);
     });
 
@@ -78,22 +88,32 @@ export class WebSocketService {
     }
 
     this.clients.set(connectionId, ws);
-    logger.info('[WebSocket] Client connected', { totalClients: this.clients.size });
+    logger.info('[WebSocket] Client connected', { 
+      totalClients: this.clients.size,
+      connectionId,
+      timestamp: new Date().toISOString()
+    });
 
     ws.on('pong', () => {
       ws.isAlive = true;
+      logger.debug('[WebSocket] Received pong', { connectionId });
     });
 
-    ws.on('close', () => {
+    ws.on('close', (code, reason) => {
       if (this.clients.delete(connectionId)) {
-        logger.debug('[WebSocket] Client disconnected', { totalClients: this.clients.size });
+        logger.info('[WebSocket] Client disconnected', { 
+          totalClients: this.clients.size,
+          connectionId,
+          code,
+          reason: reason?.toString() || 'none'
+        });
       }
     });
 
     ws.on('error', (error) => {
       // Log WebSocket errors for debugging
-      logger.warn('[WebSocket] Client error', { 
-        error: error.message, 
+      logger.warn('[WebSocket] Client error', {
+        error: error.message,
         connectionId,
         readyState: ws.readyState
       });
@@ -110,6 +130,12 @@ export class WebSocketService {
       const priceStatus = priceFeedService.getStatus();
       const currentPrice = priceFeedService.getCurrentPrice();
 
+      logger.debug('[WebSocket] Sending initial status', {
+        telegramConnected: telegramStatus.connected,
+        priceConnected: priceStatus.connected,
+        hasCurrentPrice: !!currentPrice
+      });
+
       this.send(ws, {
         type: 'INIT',
         data: {
@@ -118,8 +144,15 @@ export class WebSocketService {
           currentPrice,
         },
       });
+      
+      logger.info('[WebSocket] Initial status sent successfully');
     } catch (error) {
-      logger.warn('Error sending initial status', { error });
+      logger.error('[WebSocket] Failed to send initial status', { 
+        error: error instanceof Error ? error.message : 'Unknown',
+        stack: error instanceof Error ? error.stack : undefined
+      });
+      // Close with server error code to prevent infinite reconnect
+      ws.close(1011, 'Server initialization error');
     }
   }
 

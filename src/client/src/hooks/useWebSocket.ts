@@ -96,20 +96,36 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
     ws.onclose = (event) => {
       const reason = event.reason || 'none';
-      console.log(`[WebSocket] Disconnected (code: ${event.code}, reason: ${reason})`);
+      const code = event.code;
+      console.log(`[WebSocket] Disconnected (code: ${code}, reason: ${reason})`);
       isConnectedRef.current = false;
+      
+      // Clear the reference to the closed WebSocket
+      wsRef.current = null;
+      
       optionsRef.current.onDisconnect?.();
 
-      // Only reconnect if not explicitly disconnected and haven't exceeded max attempts
-      // Code 1000 = normal closure, 1001 = going away
-      if (wsRef.current !== null && event.code !== 1000 && event.code !== 1001) {
+      // Only reconnect for abnormal closures
+      // Code 1000 = normal closure, 1001 = going away, 1006 = abnormal (no close frame)
+      if (code !== 1000 && code !== 1001) {
+        // Check max reconnect attempts BEFORE incrementing
+        if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
+          console.warn('[WebSocket] Max reconnect attempts reached, stopping reconnection');
+          return;
+        }
+        
         reconnectAttemptsRef.current++;
-        const delay = reconnectAttemptsRef.current === 1 
+        const baseDelay = reconnectAttemptsRef.current === 1 
           ? initialReconnectDelay 
           : reconnectDelay * Math.min(reconnectAttemptsRef.current, 5);
         
+        // Add random jitter (0-1 second) to prevent thundering herd
+        const jitter = Math.random() * 1000;
+        const delay = baseDelay + jitter;
+        
+        console.log(`[WebSocket] Scheduling reconnect in ${Math.round(delay)}ms (attempt ${reconnectAttemptsRef.current})`);
+        
         reconnectTimeoutRef.current = setTimeout(() => {
-          console.log(`[WebSocket] Reconnecting... (attempt ${reconnectAttemptsRef.current})`);
           connect();
         }, delay);
       }
