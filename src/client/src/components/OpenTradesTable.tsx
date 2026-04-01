@@ -71,12 +71,12 @@ export function OpenTradesTable({ trades, onCloseTrade, loading }: OpenTradesTab
 
   return (
     <div className="card overflow-hidden">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
         <h2 className="text-lg font-semibold text-white">Open Trades ({trades.length})</h2>
       </div>
-      
+
       <div className="overflow-x-auto">
-        <table className="w-full">
+        <table className="w-full min-w-[800px]">
           <thead>
             <tr className="border-b border-border-color">
               <th className="text-left py-3 px-2 text-text-muted text-sm font-medium">Symbol</th>
@@ -122,7 +122,7 @@ export function OpenTradesTable({ trades, onCloseTrade, loading }: OpenTradesTab
                   <button
                     onClick={() => handleManualClose(trade.id)}
                     disabled={closingId === trade.id || trade.status === 'CLOSED'}
-                    className="btn-secondary text-xs py-1 px-3"
+                    className="btn-secondary text-xs py-1 px-3 whitespace-nowrap"
                   >
                     {closingId === trade.id ? 'Closing...' : 'Close'}
                   </button>

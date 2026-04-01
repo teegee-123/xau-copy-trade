@@ -34,9 +34,9 @@ function App() {
       {/* Header */}
       <header className="border-b border-border-color bg-background-card">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
+              <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
                 <svg className="w-6 h-6 text-black" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
                 </svg>
@@ -47,7 +47,7 @@ function App() {
               </div>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 sm:gap-4">
               <button
                 onClick={() => setShowConfig(true)}
                 className="btn-secondary text-sm"
@@ -60,7 +60,7 @@ function App() {
               </button>
               <button
                 onClick={() => setShowLogs(!showLogs)}
-                className="btn-secondary text-sm"
+                className="btn-secondary text-sm whitespace-nowrap"
               >
                 {showLogs ? 'Hide Logs' : 'Show Logs'}
               </button>
@@ -98,15 +98,15 @@ function App() {
 
         {/* Open Trades */}
         <div className="mb-6">
-          <OpenTradesTable 
-            trades={openTrades} 
+          <OpenTradesTable
+            trades={openTrades}
             onCloseTrade={handleManualClose}
             loading={tradesLoading}
           />
-          
+
           {openTrades.some(t => t.status === 'FAULTED' || t.status === 'PENDING_SL_TP') && (
             <div className="mt-4">
-              <button onClick={handleFaultedClose} className="btn-danger">
+              <button onClick={handleFaultedClose} className="btn-danger w-full sm:w-auto">
                 Auto Close All Faulted Trades
               </button>
             </div>
@@ -121,7 +121,7 @@ function App() {
         {/* Logs (conditional) */}
         {showLogs && (
           <div className="mb-6">
-            <LogViewer autoScroll={true} />
+            <LogViewer />
           </div>
         )}
       </main>

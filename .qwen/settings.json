@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(jq *)"
+      "Bash(jq *)",
+      "Bash(git restore *)",
+      "Bash(git commit *)"
     ]
   },
   "$version": 3

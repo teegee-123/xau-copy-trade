@@ -7,15 +7,10 @@ interface LogEntry {
   message: string;
 }
 
-interface LogViewerProps {
-  autoScroll?: boolean;
-}
-
-export function LogViewer({ autoScroll = true }: LogViewerProps) {
+export function LogViewer() {
   const [logs, setLogs] = React.useState<LogEntry[]>([]);
   const [filter, setFilter] = React.useState<'ALL' | 'INFO' | 'WARN' | 'ERROR'>('ALL');
   const [loading, setLoading] = React.useState(false);
-  const logsEndRef = React.useRef<HTMLDivElement>(null);
 
   const fetchLogs = React.useCallback(async () => {
     setLoading(true);
@@ -24,7 +19,7 @@ export function LogViewer({ autoScroll = true }: LogViewerProps) {
       const response = await axios.get('/api/logs', {
         params: { level, limit: 100 },
       });
-      
+
       if (response.data.success) {
         const parsedLogs = response.data.logs.map((line: string) => {
           const match = line.match(/\[(\w+)\]\s+(.+)/);
@@ -45,16 +40,10 @@ export function LogViewer({ autoScroll = true }: LogViewerProps) {
 
   React.useEffect(() => {
     fetchLogs();
-    
+
     const interval = setInterval(fetchLogs, 5000);
     return () => clearInterval(interval);
   }, [fetchLogs]);
-
-  React.useEffect(() => {
-    if (autoScroll && logsEndRef.current) {
-      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [logs, autoScroll]);
 
   const clearLogs = async () => {
     try {
@@ -85,7 +74,7 @@ export function LogViewer({ autoScroll = true }: LogViewerProps) {
     <div className="card">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold text-white">System Logs</h2>
-        
+
         <div className="flex gap-2">
           <select
             value={filter}
@@ -96,7 +85,7 @@ export function LogViewer({ autoScroll = true }: LogViewerProps) {
               <option key={f.value} value={f.value}>{f.label}</option>
             ))}
           </select>
-          
+
           <button onClick={clearLogs} className="btn-secondary text-sm">
             Clear
           </button>
@@ -117,19 +106,6 @@ export function LogViewer({ autoScroll = true }: LogViewerProps) {
             </div>
           ))
         )}
-        <div ref={logsEndRef} />
-      </div>
-
-      <div className="mt-2 flex items-center gap-2">
-        <label className="flex items-center gap-2 text-sm text-text-muted">
-          <input
-            type="checkbox"
-            checked={autoScroll}
-            onChange={() => {}} // Controlled by parent if needed
-            className="rounded border-border-color bg-background-light"
-          />
-          Auto-scroll to latest
-        </label>
       </div>
     </div>
   );

@@ -341,6 +341,13 @@ export class TelegramService extends EventEmitter {
       return;
     }
 
+    // Log raw message for regex debugging
+    logger.info('[SIGNAL_RAW] Incoming message', { 
+      messageId: msg.id, 
+      channel: chatId,
+      text: text.substring(0, 500) 
+    });
+
     logger.info('New message from channel', { messageId: msg.id, text: text.substring(0, 100) });
 
     // Parse the signal
@@ -348,6 +355,8 @@ export class TelegramService extends EventEmitter {
     if (parsedSignal) {
       logger.info('Parsed signal', { parsedSignal });
       this.emit('signal', parsedSignal);
+    } else {
+      logger.debug('Message did not match any template', { messageId: msg.id });
     }
   }
 

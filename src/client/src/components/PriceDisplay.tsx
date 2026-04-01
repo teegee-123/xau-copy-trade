@@ -38,19 +38,19 @@ export function PriceDisplay({ price, loading }: PriceDisplayProps) {
 
   return (
     <div className="card">
-      <div className="flex items-baseline gap-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-baseline gap-4">
         <div className="flex-1">
           <div className="text-text-muted text-sm mb-1">XAU/USD</div>
-          <div 
-            className={`text-4xl font-bold transition-colors duration-300 ${
-              priceDirection === 'up' ? 'text-success' : 
+          <div
+            className={`text-3xl sm:text-4xl font-bold transition-colors duration-300 ${
+              priceDirection === 'up' ? 'text-success' :
               priceDirection === 'down' ? 'text-error' : 'text-white'
             }`}
           >
             {price?.price ? price.price.toFixed(2) : '---.---'}
           </div>
         </div>
-        
+
         {price && (
           <>
             <div className="text-right">
@@ -68,9 +68,9 @@ export function PriceDisplay({ price, loading }: PriceDisplayProps) {
           </>
         )}
       </div>
-      
+
       {price && (
-        <div className="mt-3 flex items-center gap-2 text-xs text-text-muted">
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-text-muted">
           <span>Source: {price.source}</span>
           <span>•</span>
           <span>Updated: {new Date(price.timestamp).toLocaleTimeString()}</span>

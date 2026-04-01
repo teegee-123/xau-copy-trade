@@ -235,8 +235,87 @@ type PriceSource = WebSocketSource | ApiSource | ScrapeSource;
 
 /**
  * Source definitions with multiple fallback options
+ * Priority: TradingView HTML scrape first, then WebSocket, then API fallbacks
  */
 const PRICE_SOURCES: PriceSource[] = [
+  {
+    name: 'tradingview-scrape',
+    type: 'scrape',
+    url: 'https://www.tradingview.com/symbols/XAUUSD/',
+    headers: {
+      ...commonHeaders,
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+    },
+    parseResponse: (html: string) => {
+      // Try multiple patterns to extract price from TradingView HTML
+      const patterns = [
+        // JSON data patterns - most reliable
+        /"last_price"\s*:\s*"?([\d.]+)"?/i,
+        /"close"\s*:\s*"?([\d.]+)"?/i,
+        /"last"\s*:\s*"?([\d.]+)"?/i,
+        /"price"\s*:\s*"?([\d.]+)"?/i,
+        /"current_price"\s*:\s*"?([\d.]+)"?/i,
+        // Data attribute patterns
+        /data-price=["']([\d.]+)["']/i,
+        /data-last=["']([\d.]+)["']/i,
+        /data-current=["']([\d.]+)["']/i,
+        // Text patterns with context
+        /XAUUSD["\s>]+([\d,]+\.?\d*)/i,
+        /Gold\s*[\(\/]XAUUSD[\)]?.*?\$?\s*([\d,]+\.?\d*)/i,
+        /XAU\/USD.*?\$?\s*([\d,]+\.?\d*)/i,
+      ];
+
+      for (const pattern of patterns) {
+        const match = html.match(pattern);
+        if (match) {
+          const priceStr = match[1].replace(/,/g, '');
+          const price = parseFloat(priceStr);
+          if (price >= 1000 && price <= 5000) {
+            logger.debug(`TradingView scrape: found price ${price}`);
+            return price;
+          }
+        }
+      }
+
+      // Try to find price in embedded JSON-LD
+      const jsonLdMatch = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/i);
+      if (jsonLdMatch) {
+        try {
+          const jsonData = JSON.parse(jsonLdMatch[1]);
+          if (jsonData.price) {
+            const price = parseFloat(jsonData.price);
+            if (price >= 1000 && price <= 5000) {
+              logger.debug(`TradingView JSON-LD: found price ${price}`);
+              return price;
+            }
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      }
+
+      // Try to find price in embedded JavaScript variables
+      const jsVarMatch = html.match(/window\.__context__\s*=\s*({[\s\S]*?});/i);
+      if (jsVarMatch) {
+        try {
+          const contextData = JSON.parse(jsVarMatch[1]);
+          if (contextData?.quote?.price) {
+            const price = parseFloat(contextData.quote.price);
+            if (price >= 1000 && price <= 5000) {
+              logger.debug(`TradingView JS context: found price ${price}`);
+              return price;
+            }
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      }
+
+      logger.debug('TradingView scrape: no price found in HTML');
+      return null;
+    }
+  },
   {
     name: 'tradingview-ws',
     type: 'websocket',
@@ -307,61 +386,6 @@ const PRICE_SOURCES: PriceSource[] = [
       const response = data as { 'pax-gold'?: { usd?: number } };
       if (!response['pax-gold']?.usd) return null;
       return response['pax-gold'].usd;
-    }
-  },
-  {
-    name: 'tradingview-scrape',
-    type: 'scrape',
-    url: 'https://www.tradingview.com/symbols/XAUUSD/',
-    headers: { 
-      ...commonHeaders,
-      'Sec-Fetch-Dest': 'document',
-      'Sec-Fetch-Mode': 'navigate',
-    },
-    parseResponse: (html: string) => {
-      // Try multiple patterns to extract price
-      const patterns = [
-        // JSON data patterns
-        /"last_price"\s*:\s*"?([\d.]+)"?/i,
-        /"close"\s*:\s*"?([\d.]+)"?/i,
-        /"last"\s*:\s*"?([\d.]+)"?/i,
-        /"price"\s*:\s*"?([\d.]+)"?/i,
-        // HTML data patterns
-        /data-price=["']([\d.]+)["']/i,
-        /data-last=["']([\d.]+)["']/i,
-        // Text patterns
-        /XAUUSD["\s>]+([\d,]+\.?\d*)/i,
-        /Gold.*?\$?([\d,]+\.?\d*)/i,
-      ];
-
-      for (const pattern of patterns) {
-        const match = html.match(pattern);
-        if (match) {
-          const priceStr = match[1].replace(/,/g, '');
-          const price = parseFloat(priceStr);
-          if (price >= 1000 && price <= 5000) {
-            return price;
-          }
-        }
-      }
-
-      // Try to find price in embedded JSON-LD
-      const jsonLdMatch = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/i);
-      if (jsonLdMatch) {
-        try {
-          const jsonData = JSON.parse(jsonLdMatch[1]);
-          if (jsonData.price) {
-            const price = parseFloat(jsonData.price);
-            if (price >= 1000 && price <= 5000) {
-              return price;
-            }
-          }
-        } catch {
-          // Ignore parse errors
-        }
-      }
-
-      return null;
     }
   },
   {

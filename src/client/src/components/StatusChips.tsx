@@ -48,7 +48,7 @@ export function StatusChips({ status, loading }: StatusChipsProps) {
   }
 
   return (
-    <div className="flex flex-wrap gap-4">
+    <div className="flex flex-wrap gap-3 sm:gap-4">
       <StatusChip
         label="Telegram"
         status={status.telegram.connected ? 'connected' : status.telegram.error ? 'disconnected' : 'warning'}
@@ -58,7 +58,7 @@ export function StatusChips({ status, loading }: StatusChipsProps) {
           </svg>
         }
       />
-      
+
       <StatusChip
         label="Price API"
         status={status.price.connected ? 'connected' : 'disconnected'}
@@ -68,7 +68,7 @@ export function StatusChips({ status, loading }: StatusChipsProps) {
           </svg>
         }
       />
-      
+
       <StatusChip
         label="Trading"
         status={status.trading.enabled ? 'connected' : 'warning'}

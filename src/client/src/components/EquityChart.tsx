@@ -55,20 +55,20 @@ export function EquityChart({ range, onRangeChange }: EquityChartProps) {
 
   return (
     <div className="card">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
         <div>
           <h2 className="text-lg font-semibold text-white">Equity Curve</h2>
           <div className="text-2xl font-bold text-primary mt-1">
             ${currentEquity.toFixed(2)}
           </div>
         </div>
-        
-        <div className="flex gap-2">
+
+        <div className="flex gap-2 flex-wrap">
           {ranges.map((r) => (
             <button
               key={r.value}
               onClick={() => onRangeChange?.(r.value)}
-              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+              className={`px-3 py-1 rounded text-sm font-medium transition-colors whitespace-nowrap ${
                 range === r.value
                   ? 'bg-primary text-black'
                   : 'bg-background-light text-text-muted hover:text-white'
@@ -84,12 +84,12 @@ export function EquityChart({ range, onRangeChange }: EquityChartProps) {
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-            <XAxis 
-              dataKey="time" 
+            <XAxis
+              dataKey="time"
               stroke="#666"
               tick={{ fontSize: 12 }}
             />
-            <YAxis 
+            <YAxis
               stroke="#666"
               tick={{ fontSize: 12 }}
               domain={['auto', 'auto']}

@@ -41,13 +41,13 @@ export function TradeHistory({ trades, loading }: TradeHistoryProps) {
 
   return (
     <div className="card">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
         <h2 className="text-lg font-semibold text-white">Trade History</h2>
-        
+
         <select
           value={filter}
           onChange={(e) => setFilter(e.target.value as typeof filter)}
-          className="input-field text-sm"
+          className="input-field text-sm w-full sm:w-auto"
         >
           <option value="all">All Exits</option>
           <option value="TP_HIT">Take Profit</option>
@@ -63,7 +63,7 @@ export function TradeHistory({ trades, loading }: TradeHistoryProps) {
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="w-full min-w-[600px]">
             <thead>
               <tr className="border-b border-border-color">
                 <th className="text-left py-3 px-2 text-text-muted text-sm font-medium">Symbol</th>
