@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { configService } from '../services/configService.js';
+import { configService, POLLING_INTERVAL_MIN_MS, POLLING_INTERVAL_MAX_MS } from '../services/configService.js';
 import { db } from '../services/database.js';
 import logger from '../logger.js';
 
@@ -94,10 +94,11 @@ router.put('/', (req, res) => {
     if (section === 'priceFeed') {
       if (data.pollingIntervalMs !== undefined) {
         const interval = parseInt(data.pollingIntervalMs, 10);
-        if (isNaN(interval) || interval < 500 || interval > 10000) {
-          return res.status(400).json({ 
-            success: false, 
-            error: 'pollingIntervalMs must be between 500 and 10000 milliseconds' 
+        const validation = configService.validatePollingInterval(interval);
+        if (!validation.valid) {
+          return res.status(400).json({
+            success: false,
+            error: validation.error
           });
         }
       }

@@ -1,6 +1,6 @@
 {
   "channelConfig": {
-    "channelId": "-1001234567890",
+    "channelId": "-1001222394814",
     "channelName": "XAU Signals Pro"
   },
   "entrySignalTemplate": {
@@ -38,47 +38,43 @@
     ]
   },
   "sltpSignalTemplate": {
-    "description": "Pattern to detect updated signal with SL/TP (edited message)",
-    "pattern": "(gold|xau(?:usd)?)\\s+(buy|sell)[\\s\\S]*?(?:entry|buy at)[\\s:]+([\\d.\\-]+)[\\s\\S]*?(?:sl|stop loss)[\\s:]+([\\d.]+)[\\s\\S]*?(?:tp|take profit)[\\s:]+([\\d.]+)",
+    "description": "Pattern to detect updated signal with SL/TP (supports emojis)",
+    "matchType": "regex",
+    "pattern": "(?:GOLD|XAU(?:USD)?)\\s+(?:BUY|SELL)[\\s\\S]*?(?:SL|🔴)[\\s\\n:]*([\\d.]+)[\\s\\S]*?(?:TP|✅)[\\s\\n:]*([\\d.]+)",
     "flags": "i",
     "extractionRules": {
-      "symbol": {
-        "group": 1,
-        "transform": "uppercase",
-        "mapping": {
-          "GOLD": "XAUUSD",
-          "XAU": "XAUUSD",
-          "XAUUSD": "XAUUSD"
-        }
-      },
-      "action": {
-        "group": 2,
-        "transform": "uppercase"
-      },
-      "entryPriceRange": {
-        "group": 3,
-        "transform": "parseRange",
-        "description": "Parse '4553-4556' into { min: 4553, max: 4556 }"
-      },
       "stopLoss": {
-        "group": 4,
-        "transform": "parseFloat"
+        "group": 1,
+        "transform": "parseFloat",
+        "description": "Extract SL value after 'SL' or 🔴 emoji"
       },
       "takeProfit": {
-        "group": 5,
+        "group": 2,
         "transform": "parseFloat",
+        "description": "Extract first TP value (lowest for BUY orders)",
         "note": "If multiple TP values exist, use the first (lowest for BUY, highest for SELL)"
       }
     },
     "examples": [
       {
-        "message": "GOLD BUY NOW\nEntry: 4553-4556\nSL: 4546\nTP: 4559\nTP: 4565",
+        "message": "GOLD BUY NOW\n\nBuy @ 4712 - 4708\n\nSL🔴4704\nTP✅4718\nTP✅4722\n\nCare Money Management 💠",
         "extracted": {
-          "symbol": "XAUUSD",
-          "action": "BUY",
-          "entryPriceRange": { "min": 4553, "max": 4556 },
-          "stopLoss": 4546,
-          "takeProfit": 4559
+          "stopLoss": 4704,
+          "takeProfit": 4718
+        }
+      },
+      {
+        "message": "GOLD BUY NOW\n\nBuy @ 4685 - 4681\n\nSL\n4676\nTP\n4691\nTP\n4695\n\nCare Money Management",
+        "extracted": {
+          "stopLoss": 4676,
+          "takeProfit": 4691
+        }
+      },
+      {
+        "message": "XAU SELL NOW\n\nEntry @ 4550\n\nSL\n4560\nTP\n4540\n\nRisk Management",
+        "extracted": {
+          "stopLoss": 4560,
+          "takeProfit": 4540
         }
       }
     ]

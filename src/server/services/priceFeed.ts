@@ -1,9 +1,19 @@
+import axios from 'axios';
 import logger from '../logger.js';
 import { EventEmitter } from 'events';
-import { priceScraperService, type ScrapedPriceData } from './priceScraper.js';
 import { configService } from './configService.js';
 
-let POLLING_INTERVAL_MS = 1000; // Default 1 second, will be updated from config
+const SWISSQUOTE_URL = 'https://forex-data-feed.swissquote.com/public-quotes/bboquotes/instrument/XAU/USD';
+const REQUEST_TIMEOUT = 8000;
+const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+const commonHeaders = {
+  'User-Agent': USER_AGENT,
+  'Accept': 'application/json',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Accept-Encoding': 'gzip, deflate, br',
+  'Connection': 'keep-alive',
+};
 
 export interface PriceData {
   symbol: string;
@@ -19,23 +29,21 @@ export interface PriceStatus {
   lastPrice: number | null;
   lastUpdate: string | null;
   error?: string;
+  warning?: string;
   source: string;
 }
 
 /**
- * Robust Price Feed Service
+ * Swissquote Price Feed Service
  *
- * Polls XAU/USD price with intelligent multi-source fallback:
- * 1. TradingView WebSocket (real-time, free)
- * 2. CommodityPriceAPI, API-Ninjas (free tiers)
- * 3. PAXG tokenized gold (Binance, CoinGecko)
- * 4. Web scraping (TradingView, Kitco)
- * 5. Simulated prices as last resort
- *
- * Always returns a price - never fails silently.
+ * Fetches XAU/USD prices from Swissquote public API:
+ * - Uses first server in response with 'premium' spread profile
+ * - Configurable polling interval (200ms - 120s)
+ * - Falls back to last known price on API failure with dashboard warning
  */
 export class PriceFeedService extends EventEmitter {
   private currentPrice: PriceData | null = null;
+  private lastKnownPrice: PriceData | null = null;
   private status: PriceStatus = {
     connected: false,
     lastPrice: null,
@@ -46,17 +54,23 @@ export class PriceFeedService extends EventEmitter {
   private isPolling = false;
   private initialized = false;
   private initPromise: Promise<void> | null = null;
+  private consecutiveFailures = 0;
+  private apiWarning: string | null = null;
 
   constructor() {
     super();
   }
 
   getStatus(): PriceStatus {
-    return { ...this.status };
+    return { ...this.status, warning: this.apiWarning || undefined };
   }
 
   getCurrentPrice(): PriceData | null {
     return this.currentPrice;
+  }
+
+  getApiWarning(): string | null {
+    return this.apiWarning;
   }
 
   async initialize(): Promise<void> {
@@ -71,15 +85,14 @@ export class PriceFeedService extends EventEmitter {
 
     // Get polling interval from config
     const priceFeedConfig = configService.getPriceFeedConfig();
-    POLLING_INTERVAL_MS = priceFeedConfig.pollingIntervalMs;
 
     // Listen for config changes
     configService.on('priceFeedChange', (newConfig) => {
-      const oldInterval = POLLING_INTERVAL_MS;
-      POLLING_INTERVAL_MS = newConfig.pollingIntervalMs;
-      logger.info('Price feed configuration updated', { 
-        oldInterval, 
-        newInterval: POLLING_INTERVAL_MS 
+      const oldInterval = priceFeedConfig.pollingIntervalMs;
+      priceFeedConfig.pollingIntervalMs = newConfig.pollingIntervalMs;
+      logger.info('Price feed configuration updated', {
+        oldInterval,
+        newInterval: priceFeedConfig.pollingIntervalMs,
       });
       // Restart polling with new interval
       if (this.initialized && !this.isPolling) {
@@ -89,8 +102,8 @@ export class PriceFeedService extends EventEmitter {
     });
 
     this.initPromise = (async () => {
-      logger.info('Initializing robust price feed service...');
-      logger.info('Sources: TradingView-WS, CommodityPriceAPI, API-Ninjas, TwelveData, Binance(PAXG), CoinGecko, TradingView-Scrape, Kitco');
+      logger.info('Initializing Swissquote price feed service...');
+      logger.info('API Endpoint:', SWISSQUOTE_URL);
 
       // Do an initial fetch with timeout
       const initTimeout = Promise.resolve().then(async () => {
@@ -100,19 +113,15 @@ export class PriceFeedService extends EventEmitter {
       // Race between init and timeout
       await Promise.race([
         initTimeout,
-        new Promise(resolve => setTimeout(resolve, 5000))
+        new Promise(resolve => setTimeout(resolve, 5000)),
       ]);
 
-      // If still no price, generate simulated one
+      // If still no price, mark as disconnected
       if (!this.currentPrice) {
-        const simulatedPrice = this.generateSimulatedPrice();
-        this.currentPrice = simulatedPrice;
-        this.status.connected = true;
-        this.status.lastPrice = simulatedPrice.price;
-        this.status.lastUpdate = simulatedPrice.timestamp;
-        this.status.source = simulatedPrice.source;
-        this.emit('priceUpdate', simulatedPrice);
-        logger.warn('Using simulated price as no sources responded during init');
+        this.status.connected = false;
+        this.status.error = 'Initial price fetch failed';
+        this.apiWarning = 'Swissquote API unavailable - waiting for retry';
+        logger.warn('Initial price fetch failed, will retry on polling interval');
       }
 
       this.initialized = true;
@@ -124,7 +133,7 @@ export class PriceFeedService extends EventEmitter {
       logger.info('Price feed service initialized', {
         source: this.status.source,
         price: this.status.lastPrice,
-        pollingInterval: POLLING_INTERVAL_MS
+        pollingInterval: priceFeedConfig.pollingIntervalMs,
       });
     })();
 
@@ -136,13 +145,15 @@ export class PriceFeedService extends EventEmitter {
       clearInterval(this.pollingInterval);
     }
 
+    const priceFeedConfig = configService.getPriceFeedConfig();
+
     this.pollingInterval = setInterval(async () => {
       if (!this.isPolling) {
         await this.fetchPrice();
       }
-    }, POLLING_INTERVAL_MS);
+    }, priceFeedConfig.pollingIntervalMs);
 
-    logger.info(`Price polling started at ${POLLING_INTERVAL_MS}ms interval`);
+    logger.info(`Price polling started at ${priceFeedConfig.pollingIntervalMs}ms interval`);
   }
 
   stopPolling(): void {
@@ -153,97 +164,161 @@ export class PriceFeedService extends EventEmitter {
     }
   }
 
+  /**
+   * Parse Swissquote API response
+   * Returns bid/ask from first server's 'premium' spread profile
+   */
+  private parseSwissquoteResponse(data: unknown): { bid: number; ask: number } | null {
+    try {
+      const response = data as Array<{
+        topo?: { platform?: string; server?: string };
+        spreadProfilePrices?: Array<{
+          spreadProfile: string;
+          bidSpread?: number;
+          askSpread?: number;
+          bid: number;
+          ask: number;
+        }>;
+        ts?: number;
+      }>;
+
+      if (!Array.isArray(response) || response.length === 0) {
+        logger.debug('Swissquote: Invalid response format - not an array');
+        return null;
+      }
+
+      // Use first server in response
+      const firstServer = response[0];
+      
+      if (!firstServer.spreadProfilePrices || !Array.isArray(firstServer.spreadProfilePrices)) {
+        logger.debug('Swissquote: No spreadProfilePrices in response');
+        return null;
+      }
+
+      // Find 'premium' spread profile, fallback to first available
+      let premiumProfile = firstServer.spreadProfilePrices.find(
+        p => p.spreadProfile === 'premium'
+      );
+
+      if (!premiumProfile) {
+        premiumProfile = firstServer.spreadProfilePrices[0];
+        logger.debug('Swissquote: No premium profile, using first available:', premiumProfile.spreadProfile);
+      }
+
+      if (!premiumProfile.bid || !premiumProfile.ask) {
+        logger.debug('Swissquote: Missing bid/ask in profile');
+        return null;
+      }
+
+      // Validate price range (XAU/USD should be between $1000 and $5000)
+      if (premiumProfile.bid < 1000 || premiumProfile.bid > 5000) {
+        logger.debug('Swissquote: Price out of expected range:', premiumProfile.bid);
+        return null;
+      }
+
+      return {
+        bid: premiumProfile.bid,
+        ask: premiumProfile.ask,
+      };
+    } catch (error) {
+      logger.debug('Swissquote: Parse error:', error instanceof Error ? error.message : 'Unknown error');
+      return null;
+    }
+  }
+
   private async fetchPrice(): Promise<void> {
     this.isPolling = true;
 
     try {
-      let priceData: PriceData | null = null;
-
-      // Try scraper service (multiple sources with fallbacks)
-      const scrapedPrice = await priceScraperService.fetchPrice();
-
-      if (scrapedPrice && this.isValidPrice(scrapedPrice.price)) {
-        priceData = {
-          symbol: 'XAUUSD',
-          price: scrapedPrice.price,
-          bid: Math.round((scrapedPrice.price - 0.10) * 100) / 100,
-          ask: Math.round((scrapedPrice.price + 0.10) * 100) / 100,
-          timestamp: scrapedPrice.timestamp,
-          source: scrapedPrice.source,
-        };
-      }
-
-      // Fallback to simulated price if no data
-      if (!priceData && this.currentPrice) {
-        priceData = this.generateSimulatedPrice();
-        logger.debug('Using simulated price (no fresh data)');
-      }
-
-      if (priceData) {
-        this.currentPrice = priceData;
-        this.status.connected = true;
-        this.status.lastPrice = priceData.price;
-        this.status.lastUpdate = priceData.timestamp;
-        this.status.source = priceData.source;
-        this.status.error = undefined;
-
-        this.emit('priceUpdate', priceData);
-        logger.silly('Price updated', { price: priceData.price, source: priceData.source });
-      }
-    } catch (error) {
-      logger.warn('Price fetch error', {
-        error: error instanceof Error ? error.message : 'Unknown error'
+      const response = await axios.get(SWISSQUOTE_URL, {
+        headers: commonHeaders,
+        timeout: REQUEST_TIMEOUT,
+        responseType: 'json',
+        validateStatus: (status) => status >= 200 && status < 400,
       });
 
-      // Fallback to simulated price on error
-      if (this.currentPrice) {
-        const simulatedPrice = this.generateSimulatedPrice();
-        this.currentPrice = simulatedPrice;
-        this.status.lastPrice = simulatedPrice.price;
-        this.status.lastUpdate = simulatedPrice.timestamp;
-        this.status.source = simulatedPrice.source;
+      const priceData = this.parseSwissquoteResponse(response.data);
+
+      if (priceData) {
+        const midPrice = (priceData.bid + priceData.ask) / 2;
+        const roundedPrice = Math.round(midPrice * 100) / 100;
+        const roundedBid = Math.round(priceData.bid * 100) / 100;
+        const roundedAsk = Math.round(priceData.ask * 100) / 100;
+
+        const newData: PriceData = {
+          symbol: 'XAUUSD',
+          price: roundedPrice,
+          bid: roundedBid,
+          ask: roundedAsk,
+          timestamp: new Date().toISOString(),
+          source: 'swissquote',
+        };
+
+        this.currentPrice = newData;
+        this.lastKnownPrice = newData;
         this.status.connected = true;
-        this.status.error = 'Using simulated price due to fetch error';
-        this.emit('priceUpdate', simulatedPrice);
+        this.status.lastPrice = newData.price;
+        this.status.lastUpdate = newData.timestamp;
+        this.status.source = newData.source;
+        this.status.error = undefined;
+        this.status.warning = undefined;
+
+        // Clear any previous warning on success
+        if (this.apiWarning) {
+          logger.info('Swissquote API recovered - clearing warning');
+          this.apiWarning = null;
+        }
+
+        this.consecutiveFailures = 0;
+        this.emit('priceUpdate', newData);
+        logger.silly('Price updated', { price: newData.price, source: newData.source });
       } else {
-        // Even without previous price, generate one
-        const simulatedPrice = this.generateSimulatedPrice();
-        this.currentPrice = simulatedPrice;
-        this.status.connected = true;
-        this.status.lastPrice = simulatedPrice.price;
-        this.status.lastUpdate = simulatedPrice.timestamp;
-        this.status.source = simulatedPrice.source;
-        this.emit('priceUpdate', simulatedPrice);
+        throw new Error('Failed to parse Swissquote response');
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logger.warn('Swissquote price fetch error', { error: errorMessage });
+
+      this.consecutiveFailures++;
+
+      // Set warning on first failure
+      if (this.consecutiveFailures === 1) {
+        this.apiWarning = `Swissquote API error: ${errorMessage}`;
+        this.status.warning = this.apiWarning;
+        this.emit('statusChange', {
+          type: 'priceFeed',
+          status: { connected: false, warning: this.apiWarning },
+        });
+        logger.warn('Dashboard warning set:', this.apiWarning);
+      }
+
+      // Fallback to last known price if available
+      if (this.lastKnownPrice) {
+        this.currentPrice = {
+          ...this.lastKnownPrice,
+          timestamp: new Date().toISOString(),
+          source: 'swissquote (cached)',
+        };
+        this.status.lastPrice = this.lastKnownPrice.price;
+        this.status.lastUpdate = this.currentPrice.timestamp;
+        this.status.connected = false;
+        this.status.error = `Using cached price - API failed (${this.consecutiveFailures} consecutive failures)`;
+        
+        logger.info('Using last known price', {
+          price: this.lastKnownPrice.price,
+          failures: this.consecutiveFailures,
+        });
+
+        // Emit update with cached price
+        this.emit('priceUpdate', this.currentPrice);
+      } else {
+        // No previous price available
+        this.status.connected = false;
+        this.status.error = `API fetch failed - no cached price available (${errorMessage})`;
       }
     } finally {
       this.isPolling = false;
     }
-  }
-
-  private isValidPrice(price: number): boolean {
-    // XAU/USD should be between $1000 and $5000
-    return price >= 1000 && price <= 5000;
-  }
-
-  /**
-   * Generate simulated price for fallback mode
-   * Uses random walk based on last known price or baseline of $2650
-   */
-  private generateSimulatedPrice(): PriceData {
-    const baselinePrice = 2650;
-    const basePrice = this.currentPrice?.price || baselinePrice;
-    const volatility = 0.30; // Max change per tick in USD
-    const change = (Math.random() - 0.5) * 2 * volatility;
-    const newPrice = Math.round((basePrice + change) * 100) / 100;
-
-    return {
-      symbol: 'XAUUSD',
-      price: newPrice,
-      bid: Math.round((newPrice - 0.10) * 100) / 100,
-      ask: Math.round((newPrice + 0.10) * 100) / 100,
-      timestamp: new Date().toISOString(),
-      source: 'simulated',
-    };
   }
 
   /**
@@ -261,7 +336,6 @@ export class PriceFeedService extends EventEmitter {
    */
   shutdown(): void {
     this.stopPolling();
-    priceScraperService.shutdown();
   }
 }
 

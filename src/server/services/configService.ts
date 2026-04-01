@@ -89,6 +89,12 @@ export interface PriceFeedConfig {
 }
 
 /**
+ * Polling interval constraints
+ */
+export const POLLING_INTERVAL_MIN_MS = 200;  // Minimum 200ms
+export const POLLING_INTERVAL_MAX_MS = 120000;  // Maximum 120s
+
+/**
  * Complete Configuration
  */
 export interface AppConfig {
@@ -165,7 +171,7 @@ export class ConfigService extends EventEmitter {
         slTpTimeoutMinutes: parseInt(process.env.SL_TP_TIMEOUT_MINUTES || '5', 10),
       },
       priceFeed: {
-        pollingIntervalMs: 1000, // Default 1 second
+        pollingIntervalMs: parseInt(process.env.PRICE_FEED_POLLING_INTERVAL_MS || '1000', 10),
       },
     };
   }
@@ -216,15 +222,19 @@ export class ConfigService extends EventEmitter {
    */
   private getDefaultSltpTemplate(): SignalTemplate {
     return {
-      description: 'SL/TP update: Multi-line format with SL and TP on separate lines',
+      description: 'SL/TP update: Multi-line format with SL and TP on separate lines (supports emojis)',
       matchType: 'regex',
-      pattern: '(?:GOLD|XAU(?:USD)?)\\s+(?:BUY|SELL)[\\s\\S]*?SL[\\s\\n]+([\\d.]+)[\\s\\S]*?TP[\\s\\n]+([\\d.]+)',
+      // Improved pattern to handle:
+      // - Emojis after SL/TP (SL🔴4704, TP✅4718)
+      // - Various formats: "SL:", "SL", "SL🔴", "TP:", "TP", "TP✅"
+      // - Entry price with @ symbol: "Buy @ 4712 - 4708"
+      pattern: '(?:GOLD|XAU(?:USD)?)\\s+(?:BUY|SELL)[\\s\\S]*?(?:SL|🔴)[\\s\\n:]*([\\d.]+)[\\s\\S]*?(?:TP|✅)[\\s\\n:]*([\\d.]+)',
       flags: 'i',
       extractionRules: {
         stopLoss: {
           group: 1,
           transform: 'parseFloat',
-          description: 'Extract SL value from line after "SL"',
+          description: 'Extract SL value after "SL" or 🔴 emoji',
         },
         takeProfit: {
           group: 2,
@@ -234,6 +244,13 @@ export class ConfigService extends EventEmitter {
         },
       },
       examples: [
+        {
+          message: 'GOLD BUY NOW\n\nBuy @ 4712 - 4708\n\nSL🔴4704\nTP✅4718\nTP✅4722\n\nCare Money Management 💠',
+          extracted: {
+            stopLoss: 4704,
+            takeProfit: 4718,
+          },
+        },
         {
           message: 'GOLD BUY NOW\n\nBuy @ 4685 - 4681\n\nSL\n4676\nTP\n4691\nTP\n4695\n\nCare Money Management',
           extracted: {
@@ -246,6 +263,13 @@ export class ConfigService extends EventEmitter {
           extracted: {
             stopLoss: 4560,
             takeProfit: 4540,
+          },
+        },
+        {
+          message: 'GOLD BUY NOW\n\nSL: 4676\nTP: 4691\n\nMoney Management',
+          extracted: {
+            stopLoss: 4676,
+            takeProfit: 4691,
           },
         },
       ],
@@ -560,6 +584,19 @@ export class ConfigService extends EventEmitter {
    */
   getPriceFeedConfig(): PriceFeedConfig {
     return { ...this.config.priceFeed };
+  }
+
+  /**
+   * Validate polling interval (must be between 200ms and 120s)
+   */
+  validatePollingInterval(intervalMs: number): { valid: boolean; error?: string } {
+    if (isNaN(intervalMs) || intervalMs < POLLING_INTERVAL_MIN_MS || intervalMs > POLLING_INTERVAL_MAX_MS) {
+      return {
+        valid: false,
+        error: `Polling interval must be between ${POLLING_INTERVAL_MIN_MS}ms and ${POLLING_INTERVAL_MAX_MS}ms (${POLLING_INTERVAL_MAX_MS / 1000}s)`,
+      };
+    }
+    return { valid: true };
   }
 }
 

@@ -83,7 +83,11 @@ function App() {
 
         {/* Price Display */}
         <div className="mb-6">
-          <PriceDisplay price={price} loading={priceLoading} />
+          <PriceDisplay 
+            price={price} 
+            loading={priceLoading} 
+            warning={systemStatus?.price.warning}
+          />
         </div>
 
         {/* P&L Display */}

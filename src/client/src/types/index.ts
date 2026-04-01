@@ -39,6 +39,7 @@ export interface PriceStatus {
   lastPrice: number | null;
   lastUpdate: string | null;
   error?: string;
+  warning?: string;
   source: string;
 }
 
