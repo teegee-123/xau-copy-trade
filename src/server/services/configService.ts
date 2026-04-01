@@ -175,7 +175,7 @@ export class ConfigService extends EventEmitter {
    */
   private getDefaultEntryTemplate(): SignalTemplate {
     return {
-      description: 'Pattern to detect initial trade signal (e.g., "gold buy 4556")',
+      description: 'Entry signal: "Gold buy 4586"',
       matchType: 'regex',
       pattern: '^(gold|xau(?:usd)?)\\s+(buy|sell)\\s+([\\d.]+)$',
       flags: 'i',
@@ -200,12 +200,12 @@ export class ConfigService extends EventEmitter {
       },
       examples: [
         {
-          message: 'gold buy 4556',
-          extracted: { symbol: 'XAUUSD', action: 'BUY', maxEntryPrice: 4556 },
+          message: 'Gold buy 4586',
+          extracted: { symbol: 'XAUUSD', action: 'BUY', maxEntryPrice: 4586 },
         },
         {
-          message: 'XAUUSD SELL 4600',
-          extracted: { symbol: 'XAUUSD', action: 'SELL', maxEntryPrice: 4600 },
+          message: 'gold sell 4500',
+          extracted: { symbol: 'XAUUSD', action: 'SELL', maxEntryPrice: 4500 },
         },
       ],
     };
@@ -216,48 +216,36 @@ export class ConfigService extends EventEmitter {
    */
   private getDefaultSltpTemplate(): SignalTemplate {
     return {
-      description: 'Pattern to detect updated signal with SL/TP (edited message)',
+      description: 'SL/TP update: Multi-line format with SL and TP on separate lines',
       matchType: 'regex',
-      pattern: '(gold|xau(?:usd)?)\\s+(buy|sell)[\\s\\S]*?(?:entry|buy at)[\\s:]+([\\d.\\-]+)[\\s\\S]*?(?:sl|stop loss)[\\s:]+([\\d.]+)[\\s\\S]*?(?:tp|take profit)[\\s:]+([\\d.]+)',
+      pattern: '(?:GOLD|XAU(?:USD)?)\\s+(?:BUY|SELL)[\\s\\S]*?SL[\\s\\n]+([\\d.]+)[\\s\\S]*?TP[\\s\\n]+([\\d.]+)',
       flags: 'i',
       extractionRules: {
-        symbol: {
-          group: 1,
-          transform: 'uppercase',
-          mapping: {
-            GOLD: 'XAUUSD',
-            XAU: 'XAUUSD',
-            XAUUSD: 'XAUUSD',
-          },
-        },
-        action: {
-          group: 2,
-          transform: 'uppercase',
-        },
-        entryPriceRange: {
-          group: 3,
-          transform: 'parseRange',
-          description: "Parse '4553-4556' into { min: 4553, max: 4556 }",
-        },
         stopLoss: {
-          group: 4,
+          group: 1,
           transform: 'parseFloat',
+          description: 'Extract SL value from line after "SL"',
         },
         takeProfit: {
-          group: 5,
+          group: 2,
           transform: 'parseFloat',
-          note: 'If multiple TP values exist, use the first (lowest for BUY, highest for SELL)',
+          description: 'Extract first TP value (lowest for BUY orders)',
+          note: 'When multiple TPs exist, the first one is typically the lowest/closest',
         },
       },
       examples: [
         {
-          message: 'GOLD BUY NOW\nEntry: 4553-4556\nSL: 4546\nTP: 4559\nTP: 4565',
+          message: 'GOLD BUY NOW\n\nBuy @ 4685 - 4681\n\nSL\n4676\nTP\n4691\nTP\n4695\n\nCare Money Management',
           extracted: {
-            symbol: 'XAUUSD',
-            action: 'BUY',
-            entryPriceRange: { min: 4553, max: 4556 },
-            stopLoss: 4546,
-            takeProfit: 4559,
+            stopLoss: 4676,
+            takeProfit: 4691,
+          },
+        },
+        {
+          message: 'XAU SELL NOW\n\nEntry @ 4550\n\nSL\n4560\nTP\n4540\n\nRisk Management',
+          extracted: {
+            stopLoss: 4560,
+            takeProfit: 4540,
           },
         },
       ],
