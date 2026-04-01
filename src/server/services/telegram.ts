@@ -341,22 +341,41 @@ export class TelegramService extends EventEmitter {
       return;
     }
 
-    // Log raw message for regex debugging
-    logger.info('[SIGNAL_RAW] Incoming message', { 
-      messageId: msg.id, 
+    // Log incoming message with prominent green format
+    const messagePreview = text.length > 100 ? text.substring(0, 100) + '...' : text;
+    logger.info('[TELEGRAM] 📨 INCOMING MESSAGE', {
+      messageId: msg.id,
       channel: chatId,
-      text: text.substring(0, 500) 
+      preview: messagePreview,
+      fullText: text
     });
-
-    logger.info('New message from channel', { messageId: msg.id, text: text.substring(0, 100) });
 
     // Parse the signal
     const parsedSignal = this.parseSignal(text, msg.id, false);
+    
     if (parsedSignal) {
-      logger.info('Parsed signal', { parsedSignal });
+      // Log successful parse with extracted data
+      const extractedData: Record<string, unknown> = {};
+      if (parsedSignal.symbol) extractedData.symbol = parsedSignal.symbol;
+      if (parsedSignal.action) extractedData.action = parsedSignal.action;
+      if (parsedSignal.entryPrice) extractedData.entryPrice = parsedSignal.entryPrice;
+      if (parsedSignal.maxEntryPrice) extractedData.maxEntryPrice = parsedSignal.maxEntryPrice;
+      if (parsedSignal.stopLoss) extractedData.stopLoss = parsedSignal.stopLoss;
+      if (parsedSignal.takeProfit) extractedData.takeProfit = parsedSignal.takeProfit;
+      
+      logger.info('[TELEGRAM] ✅ SIGNAL PARSED', {
+        messageId: msg.id,
+        ...extractedData
+      });
+      
       this.emit('signal', parsedSignal);
     } else {
-      logger.debug('Message did not match any template', { messageId: msg.id });
+      // Log when no template matches
+      logger.info('[TELEGRAM] ❌ NO MATCH', {
+        messageId: msg.id,
+        reason: 'Message did not match any configured template',
+        preview: messagePreview
+      });
     }
   }
 
@@ -411,6 +430,14 @@ export class TelegramService extends EventEmitter {
         const regex = new RegExp(pattern, flags || 'i');
         match = regex.exec(text);
         matched = match !== null;
+        
+        // Log regex matching details
+        logger.info('[TELEGRAM] 📊 REGEX TEST', {
+          template: template.description,
+          pattern: pattern.substring(0, 80) + (pattern.length > 80 ? '...' : ''),
+          flags: flags || 'i',
+          matched: matched
+        });
       } else {
         // Simple string matching
         if (!template.matchValue) {
@@ -436,6 +463,14 @@ export class TelegramService extends EventEmitter {
         if (matched) {
           match = [text] as RegExpExecArray;
         }
+        
+        // Log simple match results
+        logger.info('[TELEGRAM] 📊 STRING MATCH TEST', {
+          template: template.description,
+          matchType: matchType,
+          matchValue: template.matchValue,
+          matched: matched
+        });
       }
 
       if (!matched) {
@@ -528,7 +563,7 @@ export class TelegramService extends EventEmitter {
 
       return result;
     } catch (error) {
-      logger.error('Error parsing with template', { error, template: template.description });
+      logger.error('[TELEGRAM] ❌ PARSE ERROR', { error, template: template.description });
       return null;
     }
   }
