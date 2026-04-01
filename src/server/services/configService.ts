@@ -168,7 +168,7 @@ export class ConfigService extends EventEmitter {
       sltpSignalTemplate: tradeTemplates.sltpSignalTemplate || this.getDefaultSltpTemplate(),
       trading: {
         defaultLotSize: parseFloat(process.env.DEFAULT_LOT_SIZE || '0.1'),
-        slTpTimeoutMinutes: parseInt(process.env.SL_TP_TIMEOUT_MINUTES || '5', 10),
+        slTpTimeoutMinutes: parseInt(process.env.SL_TP_TIMEOUT_MINUTES || '3', 10),
       },
       priceFeed: {
         pollingIntervalMs: parseInt(process.env.PRICE_FEED_POLLING_INTERVAL_MS || '1000', 10),

@@ -17,6 +17,26 @@ export interface Trade {
   closedAt: string | null;
 }
 
+// In-memory trade type (for new tradeStore)
+export interface StoredTrade {
+  id: number;
+  symbol: string;
+  action: 'BUY' | 'SELL';
+  entryPrice: number;
+  stopLoss: number | null;
+  takeProfit: number | null;
+  lotSize: number;
+  status: 'OPEN' | 'CLOSED' | 'PENDING_SL_TP';
+  pnlUsd: number | null;
+  pnlPercent: number | null;
+  exitPrice: number | null;
+  exitReason: string | null;
+  telegramMessageId: number;
+  createdAt: number; // timestamp in ms
+  updatedAt: number;
+  closedAt: number | null;
+}
+
 export interface PriceData {
   symbol: string;
   price: number;
@@ -67,7 +87,7 @@ export interface LogEntry {
 }
 
 export interface TradeUpdate {
-  trade: Trade;
+  trade: StoredTrade;
   type: 'OPENED' | 'CLOSED' | 'UPDATED' | 'SL_TP_UPDATED';
 }
 

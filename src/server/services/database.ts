@@ -189,13 +189,32 @@ export class DatabaseService {
 
   getFaultedTrades(timeoutMinutes: number): Trade[] {
     const stmt = this.db.prepare(`
-      SELECT * FROM trades 
-      WHERE status = 'OPEN' 
+      SELECT * FROM trades
+      WHERE status = 'OPEN'
         AND (stopLoss IS NULL OR takeProfit IS NULL)
         AND createdAt <= datetime('now', ? || ' minutes')
       ORDER BY createdAt ASC
     `);
     return stmt.all(`-${timeoutMinutes}`) as Trade[];
+  }
+
+  /**
+   * Get trade age in seconds
+   */
+  getTradeAgeInSeconds(tradeId: number): number {
+    const trade = this.getTradeById(tradeId);
+    if (!trade) return 0;
+    return Math.floor((Date.now() - new Date(trade.createdAt).getTime()) / 1000);
+  }
+
+  /**
+   * Get trade age in minutes (formatted)
+   */
+  getTradeAgeFormatted(tradeId: number): string {
+    const ageInSeconds = this.getTradeAgeInSeconds(tradeId);
+    const minutes = Math.floor(ageInSeconds / 60);
+    const seconds = ageInSeconds % 60;
+    return `${minutes}m ${seconds}s`;
   }
 
   // Equity snapshot operations

@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import type { Trade, TradeUpdate } from '../types';
+import type { StoredTrade, TradeUpdate } from '../types';
 import { useWebSocket } from './useWebSocket';
 
 export function useTrades() {
-  const [openTrades, setOpenTrades] = useState<Trade[]>([]);
-  const [closedTrades, setClosedTrades] = useState<Trade[]>([]);
+  const [openTrades, setOpenTrades] = useState<StoredTrade[]>([]);
+  const [closedTrades, setClosedTrades] = useState<StoredTrade[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 

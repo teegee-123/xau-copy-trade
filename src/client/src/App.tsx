@@ -108,10 +108,10 @@ function App() {
             loading={tradesLoading}
           />
 
-          {openTrades.some(t => t.status === 'FAULTED' || t.status === 'PENDING_SL_TP') && (
+          {openTrades.some(t => t.status === 'PENDING_SL_TP') && (
             <div className="mt-4">
               <button onClick={handleFaultedClose} className="btn-danger w-full sm:w-auto">
-                Auto Close All Faulted Trades
+                Close All Trades Missing SL/TP
               </button>
             </div>
           )}
@@ -119,7 +119,7 @@ function App() {
 
         {/* Trade History */}
         <div className="mb-6">
-          <TradeHistory trades={closedTrades} loading={tradesLoading} />
+          <TradeHistory trades={closedTrades as any} loading={tradesLoading} />
         </div>
 
         {/* Logs (conditional) */}

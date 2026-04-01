@@ -44,7 +44,7 @@ services:
       - key: TRADING_ENABLED
         value: "true"
       - key: SL_TP_TIMEOUT_MINUTES
-        value: 5
+        value: "3"
       - key: RENDER
         value: "true"
       - key: WS_MAX_CONNECTIONS

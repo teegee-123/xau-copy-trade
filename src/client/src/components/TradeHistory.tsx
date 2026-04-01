@@ -1,13 +1,13 @@
 import React from 'react';
-import type { Trade } from '../types';
+import type { StoredTrade } from '../types';
 
 interface TradeHistoryProps {
-  trades: Trade[];
+  trades: StoredTrade[];
   loading?: boolean;
 }
 
 export function TradeHistory({ trades, loading }: TradeHistoryProps) {
-  const [filter, setFilter] = React.useState<'all' | 'SL_HIT' | 'TP_HIT' | 'MANUAL_CLOSE' | 'FAULT_TIMEOUT'>('all');
+  const [filter, setFilter] = React.useState<'all' | 'SL_HIT' | 'TP_HIT' | 'MANUAL_CLOSE' | 'SL_TP_TIMEOUT'>('all');
 
   const getExitReasonLabel = (reason: string | null) => {
     const labels: Record<string, string> = {
@@ -53,7 +53,7 @@ export function TradeHistory({ trades, loading }: TradeHistoryProps) {
           <option value="TP_HIT">Take Profit</option>
           <option value="SL_HIT">Stop Loss</option>
           <option value="MANUAL_CLOSE">Manual Close</option>
-          <option value="FAULT_TIMEOUT">Timeout</option>
+          <option value="SL_TP_TIMEOUT">Timeout</option>
         </select>
       </div>
 
