@@ -331,22 +331,43 @@ export class TelegramService extends EventEmitter {
 
     this.client.addEventHandler((event: NewMessageEvent) => {
       const message = event.message;
+      logger.info('[TELEGRAM] 📬 EVENT HANDLER TRIGGERED', {
+        hasMessage: !!message,
+        messageType: typeof message,
+      });
       this.handleNewMessage(message);
     });
 
     logger.info(`Listening for messages from channel ${this.currentChannelId}`);
+    logger.info('[TELEGRAM] Message listener registered', {
+      channelId: this.currentChannelId,
+      clientConnected: !!this.client,
+    });
   }
 
   private async handleNewMessage(message: unknown): Promise<void> {
     // Check if message is from our configured channel
     const msg = message as { chatId?: number | string; message?: string; id: number };
     const chatId = msg?.chatId?.toString() || '';
+    
+    // Log channel ID filtering
+    logger.info('[TELEGRAM] 🔍 CHANNEL CHECK', {
+      incomingChatId: chatId,
+      configuredChannelId: this.currentChannelId,
+      matches: chatId === this.currentChannelId || chatId === this.currentChannelId.replace('-', ''),
+    });
+    
     if (chatId !== this.currentChannelId && chatId !== this.currentChannelId.replace('-', '')) {
+      logger.info('[TELEGRAM] ⏭️  SKIPPED - Wrong channel', {
+        incomingChatId: chatId,
+        configuredChannelId: this.currentChannelId,
+      });
       return;
     }
 
     const text = msg.message;
     if (!text) {
+      logger.info('[TELEGRAM] ⏭️  SKIPPED - No message text');
       return;
     }
 
@@ -361,7 +382,7 @@ export class TelegramService extends EventEmitter {
 
     // Parse the signal
     const parsedSignal = this.parseSignal(text, msg.id, false);
-    
+
     if (parsedSignal) {
       // Log successful parse with extracted data
       const extractedData: Record<string, unknown> = {};
@@ -371,12 +392,20 @@ export class TelegramService extends EventEmitter {
       if (parsedSignal.maxEntryPrice) extractedData.maxEntryPrice = parsedSignal.maxEntryPrice;
       if (parsedSignal.stopLoss) extractedData.stopLoss = parsedSignal.stopLoss;
       if (parsedSignal.takeProfit) extractedData.takeProfit = parsedSignal.takeProfit;
-      
+
       logger.info('[TELEGRAM] ✅ SIGNAL PARSED', {
         messageId: msg.id,
         ...extractedData
       });
-      
+
+      // Log before emitting signal event
+      logger.info('[TELEGRAM] 📢 EMITTING SIGNAL EVENT', {
+        messageId: msg.id,
+        symbol: parsedSignal.symbol,
+        action: parsedSignal.action,
+        listenerCount: this.listenerCount('signal'),
+      });
+
       this.emit('signal', parsedSignal);
     } else {
       // Log when no template matches

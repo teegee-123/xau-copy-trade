@@ -22,8 +22,11 @@ import { configService } from './services/configService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Load environment variables with explicit path
-dotenv.config({ path: path.join(__dirname, '../../.env') });
+// Load environment variables from project root
+// When running from dist/server/index.js, go up 3 levels to reach project root
+const envPath = path.join(__dirname, '../../../.env');
+logger.info(`Loading .env from: ${envPath}`);
+dotenv.config({ path: envPath });
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
@@ -109,6 +112,11 @@ async function bootstrap(): Promise<void> {
 
     // Connect Telegram signal handler to trade manager
     telegramService.on('signal', async (signal) => {
+      logger.info('[INDEX] 📡 SIGNAL EVENT RECEIVED from telegramService', {
+        symbol: signal.symbol,
+        action: signal.action,
+        messageId: signal.messageId,
+      });
       await tradeManagerService.processSignal(signal);
     });
 

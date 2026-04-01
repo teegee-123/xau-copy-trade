@@ -14,6 +14,43 @@ dotenv.config({ path: path.join(__dirname, '../../../.env') });
 const DEFAULT_SYMBOL = process.env.DEFAULT_SYMBOL || 'XAUUSD';
 const TRADING_ENABLED = process.env.TRADING_ENABLED !== 'false';
 
+// Signal history for debugging (last 50 signals)
+interface SignalHistoryEntry {
+  timestamp: string;
+  stage: 'received' | 'parsed' | 'processed' | 'error';
+  signal?: ParsedSignal;
+  tradeId?: number;
+  error?: string;
+}
+
+interface SignalHistoryInput {
+  stage: SignalHistoryEntry['stage'];
+  signal?: ParsedSignal;
+  tradeId?: number;
+  error?: string;
+}
+
+const signalHistory: SignalHistoryEntry[] = [];
+
+function addSignalHistory(input: SignalHistoryInput): void {
+  signalHistory.push({
+    ...input,
+    timestamp: new Date().toISOString(),
+  });
+  // Keep last 50 entries
+  if (signalHistory.length > 50) {
+    signalHistory.shift();
+  }
+}
+
+export function getSignalHistory(): SignalHistoryEntry[] {
+  return [...signalHistory];
+}
+
+export function clearSignalHistory(): void {
+  signalHistory.length = 0;
+}
+
 export interface TradeUpdate {
   trade: Trade;
   type: 'OPENED' | 'CLOSED' | 'UPDATED' | 'SL_TP_UPDATED';
@@ -52,9 +89,9 @@ export class TradeManagerService extends EventEmitter {
     configService.on('tradingChange', (newConfig) => {
       this.currentLotSize = newConfig.defaultLotSize;
       this.currentSlTpTimeout = newConfig.slTpTimeoutMinutes;
-      logger.info('Trading configuration updated', { 
-        lotSize: this.currentLotSize, 
-        slTpTimeout: this.currentSlTpTimeout 
+      logger.info('Trading configuration updated', {
+        lotSize: this.currentLotSize,
+        slTpTimeout: this.currentSlTpTimeout
       });
     });
 
@@ -71,6 +108,8 @@ export class TradeManagerService extends EventEmitter {
 
     // Start faulted trade checker
     this.startFaultChecking();
+
+    logger.info('Trade manager initialization complete');
   }
 
   private startPriceMonitoring(): void {
@@ -114,31 +153,62 @@ export class TradeManagerService extends EventEmitter {
    * Process a signal from Telegram
    */
   async processSignal(signal: ParsedSignal): Promise<Trade | null> {
+    // Log signal receipt
+    logger.info('[TRADE_MANAGER] 📩 SIGNAL RECEIVED', {
+      symbol: signal.symbol,
+      action: signal.action,
+      maxEntryPrice: signal.maxEntryPrice,
+      messageId: signal.messageId,
+      isEdit: signal.isEdit,
+      rawMessage: signal.rawMessage.substring(0, 50) + (signal.rawMessage.length > 50 ? '...' : ''),
+    });
+
+    // Add to signal history
+    addSignalHistory({ stage: 'received', signal });
+
     if (!this.isTradingEnabled) {
-      logger.warn('Trading is disabled, ignoring signal');
+      logger.warn('[TRADE_MANAGER] ⏸️  Trading is disabled, ignoring signal');
+      addSignalHistory({ stage: 'processed', signal, error: 'Trading disabled' });
       return null;
     }
 
-    logger.info('Processing signal', { signal });
+    logger.info('[TRADE_MANAGER] ⚙️ Processing signal', { signal });
 
     try {
       // Check if this is an SL/TP update for an existing trade
       const existingTrade = this.findTradeByMessageId(signal.messageId);
-      
+
       if (existingTrade) {
+        logger.info('[TRADE_MANAGER] 🔄 Found existing trade for SL/TP update', {
+          tradeId: existingTrade.id,
+          messageId: signal.messageId,
+        });
         // Update SL/TP for existing trade
-        return this.updateTradeSLTP(existingTrade.id, signal);
+        const result = this.updateTradeSLTP(existingTrade.id, signal);
+        if (result) {
+          addSignalHistory({ stage: 'processed', signal, tradeId: result.id });
+        }
+        return result;
       }
+
+      logger.info('[TRADE_MANAGER] 🔍 No existing trade found, checking for new entry');
 
       // Check if this is a new entry signal
       if (signal.action && (signal.maxEntryPrice !== undefined || signal.entryPrice !== undefined)) {
-        return this.openTrade(signal);
+        logger.info('[TRADE_MANAGER] 📈 Opening new trade from entry signal');
+        const result = await this.openTrade(signal);
+        if (result) {
+          addSignalHistory({ stage: 'processed', signal, tradeId: result.id });
+        }
+        return result;
       }
 
-      logger.warn('Signal does not match any trade action', { signal });
+      logger.warn('[TRADE_MANAGER] ⚠️ Signal does not match any trade action', { signal });
+      addSignalHistory({ stage: 'processed', signal, error: 'No matching action' });
       return null;
     } catch (error) {
-      logger.error('Error processing signal', { error, signal });
+      logger.error('[TRADE_MANAGER] ❌ Error processing signal', { error, signal });
+      addSignalHistory({ stage: 'error', signal, error: error instanceof Error ? error.message : 'Unknown error' });
       return null;
     }
   }
