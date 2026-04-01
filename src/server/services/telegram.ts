@@ -263,13 +263,22 @@ export class TelegramService extends EventEmitter {
         this.status.connected = true;
         this.status.authenticated = true;
         this.status.error = undefined;
-        this.emit('statusChange', this.status);
-
+        
         logger.info('Telegram authentication successful');
-        this.emit('authenticated');
-
-        // Start listening for messages
-        this.listenForMessages();
+        
+        // Defer post-auth initialization to avoid blocking the event loop
+        // This prevents WebSocket connection issues during auth completion
+        setImmediate(() => {
+          this.emit('statusChange', this.status);
+          this.emit('authenticated');
+          
+          // Start listening for messages after a small delay
+          // This gives WebSocket connections time to stabilize
+          setTimeout(() => {
+            this.listenForMessages();
+            logger.info('Telegram message listener started (deferred)');
+          }, 500);
+        });
 
         return { success: true, session: sessionString };
       }

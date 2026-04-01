@@ -16,7 +16,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 5;
   const reconnectDelay = 3000;
+  const initialReconnectDelay = 2000; // Longer initial delay after auth
   const optionsRef = useRef(options);
+  const lastErrorTimeRef = useRef<number>(0);
+  const errorCountRef = useRef(0);
 
   // Keep options ref updated
   useEffect(() => {
@@ -39,20 +42,22 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
     // Check max reconnect attempts
     if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
-      console.error('Max WebSocket reconnect attempts reached');
+      console.warn('[WebSocket] Max reconnect attempts reached, will retry on next user interaction');
       return;
     }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
 
-    console.log(`Connecting to WebSocket: ${wsUrl} (attempt ${reconnectAttemptsRef.current + 1})`);
+    const attempt = reconnectAttemptsRef.current + 1;
+    console.log(`[WebSocket] Connecting to ${wsUrl} (attempt ${attempt})`);
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
-      console.log('WebSocket connected');
+      console.log('[WebSocket] Connected');
       isConnectedRef.current = true;
-      reconnectAttemptsRef.current = 0; // Reset on successful connection
+      reconnectAttemptsRef.current = 0;
+      errorCountRef.current = 0;
       optionsRef.current.onConnect?.();
     };
 
@@ -85,27 +90,54 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
             break;
         }
       } catch (error) {
-        console.error('Error parsing WebSocket message:', error);
+        console.error('[WebSocket] Error parsing message:', error);
       }
     };
 
     ws.onclose = (event) => {
-      console.log(`WebSocket disconnected (code: ${event.code}, reason: ${event.reason || 'none'})`);
+      const reason = event.reason || 'none';
+      console.log(`[WebSocket] Disconnected (code: ${event.code}, reason: ${reason})`);
       isConnectedRef.current = false;
       optionsRef.current.onDisconnect?.();
 
       // Only reconnect if not explicitly disconnected and haven't exceeded max attempts
-      if (wsRef.current !== null && event.code !== 1000) {
+      // Code 1000 = normal closure, 1001 = going away
+      if (wsRef.current !== null && event.code !== 1000 && event.code !== 1001) {
         reconnectAttemptsRef.current++;
+        const delay = reconnectAttemptsRef.current === 1 
+          ? initialReconnectDelay 
+          : reconnectDelay * Math.min(reconnectAttemptsRef.current, 5);
+        
         reconnectTimeoutRef.current = setTimeout(() => {
-          console.log(`Attempting to reconnect... (attempt ${reconnectAttemptsRef.current})`);
+          console.log(`[WebSocket] Reconnecting... (attempt ${reconnectAttemptsRef.current})`);
           connect();
-        }, reconnectDelay);
+        }, delay);
       }
     };
 
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
+    ws.onerror = () => {
+      // Rate limit error logging to avoid spam
+      const now = Date.now();
+      const timeSinceLastError = now - lastErrorTimeRef.current;
+      
+      // Only log if it's been more than 5 seconds or it's a new error burst
+      if (timeSinceLastError > 5000) {
+        errorCountRef.current = 0;
+      }
+      
+      lastErrorTimeRef.current = now;
+      errorCountRef.current++;
+      
+      // Suppress error logging during expected reconnection scenarios
+      // (e.g., server restart, Render sleep, post-auth reconnection)
+      if (errorCountRef.current <= 3 && reconnectAttemptsRef.current < maxReconnectAttempts) {
+        // Silent - expected reconnection
+        console.debug('[WebSocket] Connection error, will retry...');
+      } else if (errorCountRef.current === 4) {
+        // Log once after several silent failures
+        console.warn('[WebSocket] Multiple connection errors, server may be unavailable');
+      }
+      // Subsequent errors are silent until reset
     };
 
     wsRef.current = ws;
@@ -125,12 +157,21 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
     isConnectedRef.current = false;
     reconnectAttemptsRef.current = 0;
+    errorCountRef.current = 0;
   }, []);
 
   const sendMessage = useCallback((data: unknown) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(data));
     }
+  }, []);
+
+  // Reset error tracking periodically
+  useEffect(() => {
+    const interval = setInterval(() => {
+      errorCountRef.current = 0;
+    }, 10000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {

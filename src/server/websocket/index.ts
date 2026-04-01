@@ -28,13 +28,17 @@ export class WebSocketService {
       this.handleConnection(ws);
     });
 
+    this.wss.on('error', (error) => {
+      logger.error('[WebSocket] Server error', { error: error.message });
+    });
+
     // Start heartbeat to clean up stale connections
     this.startHeartbeat();
 
     // Subscribe to service events
     this.subscribeToEvents();
 
-    logger.info('WebSocket server initialized');
+    logger.info('[WebSocket] Server initialized');
   }
 
   private startHeartbeat(): void {
@@ -65,16 +69,16 @@ export class WebSocketService {
     const connectionId = `client_${++this.connectionCounter}`;
     ws.id = connectionId;
     ws.isAlive = true;
-    
+
     // Check if we already have this exact WebSocket (shouldn't happen, but safety check)
     if (this.clients.has(connectionId)) {
-      logger.warn('Duplicate connection ID detected, closing');
+      logger.warn('[WebSocket] Duplicate connection ID detected, closing');
       ws.terminate();
       return;
     }
 
     this.clients.set(connectionId, ws);
-    logger.debug('WebSocket client connected', { totalClients: this.clients.size });
+    logger.info('[WebSocket] Client connected', { totalClients: this.clients.size });
 
     ws.on('pong', () => {
       ws.isAlive = true;
@@ -82,13 +86,18 @@ export class WebSocketService {
 
     ws.on('close', () => {
       if (this.clients.delete(connectionId)) {
-        logger.debug('WebSocket client disconnected', { totalClients: this.clients.size });
+        logger.debug('[WebSocket] Client disconnected', { totalClients: this.clients.size });
       }
     });
 
     ws.on('error', (error) => {
-      logger.debug('WebSocket client error', { error: error.message });
-      this.clients.delete(connectionId);
+      // Log WebSocket errors for debugging
+      logger.warn('[WebSocket] Client error', { 
+        error: error.message, 
+        connectionId,
+        readyState: ws.readyState
+      });
+      // Don't immediately remove - let close handler do it
     });
 
     // Send initial status
