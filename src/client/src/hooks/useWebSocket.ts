@@ -128,13 +128,19 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
       optionsRef.current.onDisconnect?.();
 
-      // Handle capacity errors specially - wait longer before retry
+      // Handle capacity errors (4004) - DO NOT auto-reconnect
+      // User must manually refresh or the server will keep rejecting
       if (code === 4004) {
-        console.warn('[WebSocket] Server at capacity, waiting 30s before retry');
-        reconnectAttemptsRef.current = 0;  // Reset to allow retry
-        reconnectTimeoutRef.current = setTimeout(() => {
-          connect();
-        }, 30000);
+        console.error('[WebSocket] Server at capacity - stopping reconnection attempts');
+        console.error('[WebSocket] Please wait a few moments and refresh the page');
+        reconnectAttemptsRef.current = maxReconnectAttempts;  // Prevent further attempts
+        return;
+      }
+
+      // Handle origin not allowed (4003) - DO NOT auto-reconnect
+      if (code === 4003) {
+        console.error('[WebSocket] Origin not allowed - stopping reconnection attempts');
+        reconnectAttemptsRef.current = maxReconnectAttempts;  // Prevent further attempts
         return;
       }
 
@@ -148,7 +154,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         }
 
         reconnectAttemptsRef.current++;
-        
+
         // Exponential backoff: 5s, 15s, 30s
         const baseDelay = reconnectAttemptsRef.current === 1
           ? reconnectDelay
@@ -165,6 +171,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         reconnectTimeoutRef.current = setTimeout(() => {
           connect();
         }, delay);
+      } else {
+        console.log('[WebSocket] Normal closure, not reconnecting');
       }
     };
 
@@ -193,13 +201,18 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   }, [options]);
 
   const disconnect = useCallback(() => {
+    console.log('[WebSocket] Disconnecting...');
+    
     // Prevent reconnection
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
+      console.log('[WebSocket] Reconnect timeout cleared');
     }
 
     if (wsRef.current) {
+      const readyState = wsRef.current.readyState;
+      console.log('[WebSocket] Closing WebSocket, readyState:', readyState);
       wsRef.current.close(1000, 'Client disconnecting');
       wsRef.current = null;
     }
@@ -207,6 +220,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     isConnectedRef.current = false;
     reconnectAttemptsRef.current = 0;
     errorCountRef.current = 0;
+    console.log('[WebSocket] Disconnected');
   }, []);
 
   const sendMessage = useCallback((data: unknown) => {
@@ -224,9 +238,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   }, []);
 
   useEffect(() => {
+    console.log('[WebSocket] Hook mounted, connecting...');
     connect();
 
     return () => {
+      console.log('[WebSocket] Hook unmounting, cleaning up...');
       disconnect();
     };
   }, [connect, disconnect]);

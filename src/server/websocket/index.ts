@@ -15,7 +15,7 @@ interface CustomWebSocket extends WebSocket {
 // Configuration for Render free tier optimization
 const WS_CONFIG = {
   MAX_CONNECTIONS: 10,           // Limit concurrent connections for 512MB RAM
-  HEARTBEAT_INTERVAL: 15000,     // 15s heartbeat (shorter for faster cleanup)
+  HEARTBEAT_INTERVAL: 5000,      // 5s heartbeat (faster cleanup of stale connections)
   PING_TIMEOUT: 10000,           // 10s timeout for ping response
   ORIGIN_WHITIST: ['localhost', '127.0.0.1', '.onrender.com'],  // Allowed origins
 };
@@ -38,24 +38,6 @@ export class WebSocketService {
     this.wss.on('connection', (ws: CustomWebSocket, request: IncomingMessage) => {
       const origin = request.headers.origin;
       const ip = request.socket.remoteAddress;
-      
-      // Validate origin
-      if (!this.isOriginAllowed(origin)) {
-        logger.warn('[WebSocket] Connection rejected - origin not allowed', { origin });
-        ws.close(4003, 'Origin not allowed');
-        return;
-      }
-
-      // Check connection limit
-      if (this.clients.size >= WS_CONFIG.MAX_CONNECTIONS) {
-        logger.warn('[WebSocket] Connection rejected - max connections reached', {
-          current: this.clients.size,
-          max: WS_CONFIG.MAX_CONNECTIONS,
-          origin: origin || 'unknown'
-        });
-        ws.close(4004, 'Server at capacity');
-        return;
-      }
 
       logger.info('[WebSocket] Connection attempt', {
         origin: origin || 'unknown',
@@ -63,8 +45,8 @@ export class WebSocketService {
         url: request.url,
         currentConnections: this.clients.size
       });
-      
-      this.handleConnection(ws);
+
+      this.handleConnection(ws, origin);
     });
 
     this.wss.on('error', (error) => {
@@ -138,48 +120,117 @@ export class WebSocketService {
           remaining: this.clients.size
         });
       }
+
+      // Monitor for connection leaks - warn if map grows beyond expected
+      const currentSize = this.clients.size;
+      if (currentSize > WS_CONFIG.MAX_CONNECTIONS) {
+        logger.warn('[WebSocket] Connection map size exceeds limit', {
+          current: currentSize,
+          max: WS_CONFIG.MAX_CONNECTIONS,
+          action: 'Check for connection leak or rapid reconnections'
+        });
+      } else if (currentSize > 0) {
+        logger.debug('[WebSocket] Connection map health', {
+          activeConnections: currentSize
+        });
+      }
     }, WS_CONFIG.HEARTBEAT_INTERVAL);
   }
 
-  private handleConnection(ws: CustomWebSocket): void {
+  private handleConnection(ws: CustomWebSocket, origin?: string): void {
+    // Validate origin first
+    if (!this.isOriginAllowed(origin)) {
+      logger.warn('[WebSocket] Connection rejected - origin not allowed', { origin });
+      ws.close(4003, 'Origin not allowed');
+      return;
+    }
+
     // Generate unique ID for this connection
     const connectionId = `client_${++this.connectionCounter}`;
     ws.id = connectionId;
     ws.isAlive = true;
 
-    // Check if we already have this exact WebSocket (shouldn't happen, but safety check)
-    if (this.clients.has(connectionId)) {
-      logger.warn('[WebSocket] Duplicate connection ID detected, closing');
-      ws.terminate();
+    // Add to clients map immediately for tracking
+    this.clients.set(connectionId, ws);
+    logger.debug('[WebSocket] Connection added to Map', {
+      connectionId,
+      totalClients: this.clients.size
+    });
+
+    // Check connection limit AFTER adding to map (so we track all connections)
+    if (this.clients.size > WS_CONFIG.MAX_CONNECTIONS) {
+      logger.warn('[WebSocket] Connection rejected - max connections reached', {
+        current: this.clients.size,
+        max: WS_CONFIG.MAX_CONNECTIONS,
+        origin: origin || 'unknown',
+        connectionId
+      });
+      
+      // Close the connection and schedule cleanup
+      ws.close(4004, 'Server at capacity');
+      
+      // Schedule immediate cleanup for rejected connections
+      // Use setTimeout to allow close event to propagate first
+      setTimeout(() => {
+        if (this.clients.delete(connectionId)) {
+          logger.info('[WebSocket] Rejected connection cleaned up', {
+            connectionId,
+            remaining: this.clients.size
+          });
+        }
+      }, 100);
       return;
     }
 
-    this.clients.set(connectionId, ws);
     logger.info('[WebSocket] Client connected', {
       totalClients: this.clients.size,
       connectionId,
       timestamp: new Date().toISOString()
     });
 
-    ws.on('close', (code, reason) => {
-      if (this.clients.delete(connectionId)) {
-        logger.info('[WebSocket] Client disconnected', {
-          totalClients: this.clients.size,
-          connectionId,
-          code,
-          reason: reason?.toString() || 'none'
-        });
+    // Track if already cleaned up to prevent double-cleanup
+    let isCleanedUp = false;
+    const safeCleanup = () => {
+      if (!isCleanedUp) {
+        isCleanedUp = true;
+        if (this.clients.delete(connectionId)) {
+          logger.info('[WebSocket] Client cleaned up', {
+            totalClients: this.clients.size,
+            connectionId
+          });
+        } else {
+          logger.debug('[WebSocket] Client already removed from Map', { connectionId });
+        }
       }
+    };
+
+    ws.on('close', (code, reason) => {
+      logger.debug('[WebSocket] Close event received', {
+        connectionId,
+        code,
+        reason: reason?.toString() || 'none'
+      });
+      safeCleanup();
     });
 
     ws.on('error', (error) => {
-      logger.debug('[WebSocket] Client error', {
+      logger.debug('[WebSocket] Error event received', {
         error: error.message,
         connectionId,
         readyState: ws.readyState
       });
-      // Don't immediately remove - let close handler do it
+      // Cleanup on error as a safety net (close event should also fire)
+      safeCleanup();
     });
+
+    // Set connection timeout - if handshake doesn't complete, cleanup
+    const connectionTimeout = setTimeout(() => {
+      if (ws.readyState === WebSocket.CONNECTING) {
+        logger.warn('[WebSocket] Connection timeout, cleaning up', { connectionId });
+        ws.terminate();
+        safeCleanup();
+      }
+    }, 5000);
 
     // Set ping timeout - close if no response within timeout
     const pingTimeout = setTimeout(() => {
@@ -194,40 +245,43 @@ export class WebSocketService {
       clearTimeout(pingTimeout);
     });
 
-    // Send initial status
-    this.sendInitialStatus(ws);
+    // Send initial status, then clear connection timeout
+    this.sendInitialStatus(ws)
+      .then(() => {
+        clearTimeout(connectionTimeout);
+      })
+      .catch((error) => {
+        clearTimeout(connectionTimeout);
+        logger.error('[WebSocket] Failed to send initial status, closing connection', {
+          connectionId,
+          error: error instanceof Error ? error.message : 'Unknown'
+        });
+        ws.close(1011, 'Server initialization error');
+        safeCleanup();
+      });
   }
 
-  private sendInitialStatus(ws: CustomWebSocket): void {
-    try {
-      const telegramStatus = telegramService.getStatus();
-      const priceStatus = priceFeedService.getStatus();
-      const currentPrice = priceFeedService.getCurrentPrice();
+  private async sendInitialStatus(ws: CustomWebSocket): Promise<void> {
+    const telegramStatus = telegramService.getStatus();
+    const priceStatus = priceFeedService.getStatus();
+    const currentPrice = priceFeedService.getCurrentPrice();
 
-      logger.debug('[WebSocket] Sending initial status', {
-        telegramConnected: telegramStatus.connected,
-        priceConnected: priceStatus.connected,
-        hasCurrentPrice: !!currentPrice
-      });
+    logger.debug('[WebSocket] Sending initial status', {
+      telegramConnected: telegramStatus.connected,
+      priceConnected: priceStatus.connected,
+      hasCurrentPrice: !!currentPrice
+    });
 
-      this.send(ws, {
-        type: 'INIT',
-        data: {
-          telegram: telegramStatus,
-          price: priceStatus,
-          currentPrice,
-        },
-      });
-      
-      logger.info('[WebSocket] Initial status sent successfully');
-    } catch (error) {
-      logger.error('[WebSocket] Failed to send initial status', { 
-        error: error instanceof Error ? error.message : 'Unknown',
-        stack: error instanceof Error ? error.stack : undefined
-      });
-      // Close with server error code to prevent infinite reconnect
-      ws.close(1011, 'Server initialization error');
-    }
+    this.send(ws, {
+      type: 'INIT',
+      data: {
+        telegram: telegramStatus,
+        price: priceStatus,
+        currentPrice,
+      },
+    });
+
+    logger.info('[WebSocket] Initial status sent successfully');
   }
 
   private subscribeToEvents(): void {
