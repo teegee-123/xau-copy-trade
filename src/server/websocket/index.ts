@@ -12,12 +12,14 @@ interface CustomWebSocket extends WebSocket {
   id?: string;
 }
 
-// Configuration for Render free tier optimization
+// Configuration - Read from environment variables with sensible defaults
 const WS_CONFIG = {
-  MAX_CONNECTIONS: 10,           // Limit concurrent connections for 512MB RAM
-  HEARTBEAT_INTERVAL: 5000,      // 5s heartbeat (faster cleanup of stale connections)
-  PING_TIMEOUT: 10000,           // 10s timeout for ping response
-  ORIGIN_WHITIST: ['localhost', '127.0.0.1', '.onrender.com'],  // Allowed origins
+  MAX_CONNECTIONS: parseInt(process.env.WS_MAX_CONNECTIONS || '10', 10),
+  HEARTBEAT_INTERVAL: parseInt(process.env.WS_HEARTBEAT_INTERVAL || '15000', 10),
+  PING_TIMEOUT: parseInt(process.env.WS_PING_TIMEOUT || '30000', 10),
+  ORIGIN_WHITELIST: process.env.WS_ORIGIN_WHITELIST
+    ? process.env.WS_ORIGIN_WHITELIST.split(',').map(s => s.trim())
+    : ['localhost', '127.0.0.1', '.onrender.com'],
 };
 
 export class WebSocketService {
@@ -26,13 +28,26 @@ export class WebSocketService {
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private connectionCounter = 0;
 
+  /**
+   * Get current connection count (for monitoring/debugging)
+   */
+  getConnectionCount(): number {
+    return this.clients.size;
+  }
+
+  /**
+   * Get connection limit
+   */
+  getConnectionLimit(): number {
+    return WS_CONFIG.MAX_CONNECTIONS;
+  }
+
   initialize(server: Server): void {
     this.wss = new WebSocketServer({
       server,
       path: '/ws',
       perMessageDeflate: false,
       clientTracking: true,
-      // Origin validation handled in connection handler
     });
 
     this.wss.on('connection', (ws: CustomWebSocket, request: IncomingMessage) => {
@@ -43,7 +58,8 @@ export class WebSocketService {
         origin: origin || 'unknown',
         ip: ip || 'unknown',
         url: request.url,
-        currentConnections: this.clients.size
+        currentConnections: this.clients.size,
+        maxConnections: WS_CONFIG.MAX_CONNECTIONS,
       });
 
       this.handleConnection(ws, origin);
@@ -65,7 +81,9 @@ export class WebSocketService {
 
     logger.info('[WebSocket] Server initialized', {
       maxConnections: WS_CONFIG.MAX_CONNECTIONS,
-      heartbeatInterval: WS_CONFIG.HEARTBEAT_INTERVAL
+      heartbeatInterval: WS_CONFIG.HEARTBEAT_INTERVAL,
+      pingTimeout: WS_CONFIG.PING_TIMEOUT,
+      originWhitelist: WS_CONFIG.ORIGIN_WHITELIST,
     });
   }
 
@@ -73,22 +91,20 @@ export class WebSocketService {
    * Validate if origin is allowed
    */
   private isOriginAllowed(origin?: string): boolean {
-    if (!origin) return true; // Allow requests without origin (e.g., mobile apps, curl)
-    
+    if (!origin) return true;
+
     try {
       const url = new URL(origin);
       const hostname = url.hostname.toLowerCase();
-      
-      // Check whitelist
-      return WS_CONFIG.ORIGIN_WHITIST.some(allowed => {
+
+      return WS_CONFIG.ORIGIN_WHITELIST.some(allowed => {
         if (allowed.startsWith('.')) {
-          // Subdomain match (e.g., .onrender.com matches xau-copy-trade.onrender.com)
           return hostname.endsWith(allowed);
         }
         return hostname === allowed;
       });
     } catch {
-      return false; // Invalid URL
+      return false;
     }
   }
 
@@ -109,7 +125,6 @@ export class WebSocketService {
         ws.ping();
       });
 
-      // Clean up dead clients
       deadClients.forEach((id) => {
         this.clients.delete(id);
       });
@@ -117,21 +132,19 @@ export class WebSocketService {
       if (deadClients.length > 0) {
         logger.info('[WebSocket] Cleaned up stale connections', {
           count: deadClients.length,
-          remaining: this.clients.size
+          remaining: this.clients.size,
         });
       }
 
-      // Monitor for connection leaks - warn if map grows beyond expected
       const currentSize = this.clients.size;
       if (currentSize > WS_CONFIG.MAX_CONNECTIONS) {
         logger.warn('[WebSocket] Connection map size exceeds limit', {
           current: currentSize,
           max: WS_CONFIG.MAX_CONNECTIONS,
-          action: 'Check for connection leak or rapid reconnections'
         });
       } else if (currentSize > 0) {
         logger.debug('[WebSocket] Connection map health', {
-          activeConnections: currentSize
+          activeConnections: currentSize,
         });
       }
     }, WS_CONFIG.HEARTBEAT_INTERVAL);
@@ -150,45 +163,40 @@ export class WebSocketService {
     ws.id = connectionId;
     ws.isAlive = true;
 
-    // Add to clients map immediately for tracking
-    this.clients.set(connectionId, ws);
-    logger.debug('[WebSocket] Connection added to Map', {
-      connectionId,
-      totalClients: this.clients.size
-    });
-
-    // Check connection limit AFTER adding to map (so we track all connections)
-    if (this.clients.size > WS_CONFIG.MAX_CONNECTIONS) {
+    // Check connection limit BEFORE adding to map (fix: prevent over-capacity connections)
+    if (this.clients.size >= WS_CONFIG.MAX_CONNECTIONS) {
       logger.warn('[WebSocket] Connection rejected - max connections reached', {
         current: this.clients.size,
         max: WS_CONFIG.MAX_CONNECTIONS,
         origin: origin || 'unknown',
-        connectionId
+        connectionId,
       });
-      
-      // Close the connection and schedule cleanup
+
+      // Close immediately WITHOUT adding to clients map
+      // This prevents the race condition where client reconnects before cleanup
       ws.close(4004, 'Server at capacity');
       
-      // Schedule immediate cleanup for rejected connections
-      // Use setTimeout to allow close event to propagate first
-      setTimeout(() => {
-        if (this.clients.delete(connectionId)) {
-          logger.info('[WebSocket] Rejected connection cleaned up', {
-            connectionId,
-            remaining: this.clients.size
-          });
-        }
-      }, 100);
+      // Log that we're NOT tracking this connection (no cleanup needed)
+      logger.debug('[WebSocket] Rejected connection not tracked (no cleanup needed)', {
+        connectionId,
+      });
       return;
     }
+
+    // Add to clients map (we've verified capacity above)
+    this.clients.set(connectionId, ws);
+    logger.debug('[WebSocket] Connection added to Map', {
+      connectionId,
+      totalClients: this.clients.size,
+    });
 
     logger.info('[WebSocket] Client connected', {
       totalClients: this.clients.size,
       connectionId,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
 
-    // Track if already cleaned up to prevent double-cleanup
+    // Track cleanup state to prevent double-cleanup
     let isCleanedUp = false;
     const safeCleanup = () => {
       if (!isCleanedUp) {
@@ -196,7 +204,7 @@ export class WebSocketService {
         if (this.clients.delete(connectionId)) {
           logger.info('[WebSocket] Client cleaned up', {
             totalClients: this.clients.size,
-            connectionId
+            connectionId,
           });
         } else {
           logger.debug('[WebSocket] Client already removed from Map', { connectionId });
@@ -208,7 +216,7 @@ export class WebSocketService {
       logger.debug('[WebSocket] Close event received', {
         connectionId,
         code,
-        reason: reason?.toString() || 'none'
+        reason: reason?.toString() || 'none',
       });
       safeCleanup();
     });
@@ -217,22 +225,22 @@ export class WebSocketService {
       logger.debug('[WebSocket] Error event received', {
         error: error.message,
         connectionId,
-        readyState: ws.readyState
+        readyState: ws.readyState,
       });
-      // Cleanup on error as a safety net (close event should also fire)
+      // Cleanup on error (close event should also fire, but this is a safety net)
       safeCleanup();
     });
 
-    // Set connection timeout - if handshake doesn't complete, cleanup
+    // Connection timeout - clean up if handshake doesn't complete
     const connectionTimeout = setTimeout(() => {
       if (ws.readyState === WebSocket.CONNECTING) {
         logger.warn('[WebSocket] Connection timeout, cleaning up', { connectionId });
         ws.terminate();
         safeCleanup();
       }
-    }, 5000);
+    }, 10000);
 
-    // Set ping timeout - close if no response within timeout
+    // Ping timeout - close if no response
     const pingTimeout = setTimeout(() => {
       if (ws.readyState === WebSocket.OPEN) {
         logger.warn('[WebSocket] Client ping timeout, closing', { connectionId });
@@ -254,7 +262,7 @@ export class WebSocketService {
         clearTimeout(connectionTimeout);
         logger.error('[WebSocket] Failed to send initial status, closing connection', {
           connectionId,
-          error: error instanceof Error ? error.message : 'Unknown'
+          error: error instanceof Error ? error.message : 'Unknown',
         });
         ws.close(1011, 'Server initialization error');
         safeCleanup();
@@ -269,7 +277,7 @@ export class WebSocketService {
     logger.debug('[WebSocket] Sending initial status', {
       telegramConnected: telegramStatus.connected,
       priceConnected: priceStatus.connected,
-      hasCurrentPrice: !!currentPrice
+      hasCurrentPrice: !!currentPrice,
     });
 
     this.send(ws, {
@@ -285,7 +293,6 @@ export class WebSocketService {
   }
 
   private subscribeToEvents(): void {
-    // Price updates
     priceFeedService.on('priceUpdate', (priceData: unknown) => {
       this.broadcast({
         type: 'PRICE_UPDATE',
@@ -293,7 +300,6 @@ export class WebSocketService {
       });
     });
 
-    // Trade updates
     tradeManagerService.on('tradeUpdate', (update: unknown) => {
       this.broadcast({
         type: 'TRADE_UPDATE',
@@ -301,7 +307,6 @@ export class WebSocketService {
       });
     });
 
-    // Status changes
     telegramService.on('statusChange', (status: unknown) => {
       this.broadcast({
         type: 'STATUS_CHANGE',
@@ -322,7 +327,6 @@ export class WebSocketService {
       });
     });
 
-    // Config changes
     configService.on('configChange', (configUpdate: { section: string; config: unknown }) => {
       this.broadcast({
         type: 'CONFIG_UPDATE',
@@ -343,7 +347,6 @@ export class WebSocketService {
       }
     });
 
-    // Clean up dead clients
     deadClients.forEach((id) => {
       this.clients.delete(id);
     });
@@ -359,7 +362,6 @@ export class WebSocketService {
    * Cleanup on shutdown
    */
   shutdown(): void {
-    // Stop heartbeat
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;

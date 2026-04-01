@@ -4,6 +4,7 @@ import { priceFeedService } from '../services/priceFeed.js';
 import { tradeManagerService } from '../services/tradeManager.js';
 import { getRecentLogs, clearLogs } from '../logger.js';
 import { db } from '../services/database.js';
+import { webSocketService } from '../websocket/index.js';
 import logger from '../logger.js';
 
 const router = Router();
@@ -99,19 +100,43 @@ router.get('/equity', (req, res) => {
   try {
     const range = (req.query.range as '1D' | '1W' | '1M' | 'ALL') || '1W';
     const snapshots = db.getEquityHistory(range);
-    
+
     // Calculate total equity from P&L
     const pnlSummary = tradeManagerService.getPnLSummary();
     const currentEquity = 10000 + pnlSummary.totalPnlUsd; // Starting equity 10000
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       snapshots,
       currentEquity,
     });
   } catch (error) {
     logger.error('Error getting equity history', { error });
     res.status(500).json({ success: false, error: 'Failed to get equity history' });
+  }
+});
+
+/**
+ * GET /api/ws/status
+ * Get WebSocket connection status (for debugging)
+ */
+router.get('/ws/status', (req, res) => {
+  try {
+    const connectionCount = webSocketService.getConnectionCount();
+    const connectionLimit = webSocketService.getConnectionLimit();
+
+    res.json({
+      success: true,
+      status: {
+        activeConnections: connectionCount,
+        maxConnections: connectionLimit,
+        availableSlots: Math.max(0, connectionLimit - connectionCount),
+        isAtCapacity: connectionCount >= connectionLimit,
+      },
+    });
+  } catch (error) {
+    logger.error('Error getting WebSocket status', { error });
+    res.status(500).json({ success: false, error: 'Failed to get WebSocket status' });
   }
 });
 

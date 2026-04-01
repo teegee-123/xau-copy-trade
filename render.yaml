@@ -51,3 +51,7 @@ services:
         value: "10"
       - key: WS_HEARTBEAT_INTERVAL
         value: "15000"
+      - key: WS_PING_TIMEOUT
+        value: "30000"
+      - key: WS_ORIGIN_WHITELIST
+        value: "localhost,127.0.0.1,.onrender.com"
