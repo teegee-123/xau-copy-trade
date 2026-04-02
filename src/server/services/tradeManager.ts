@@ -4,6 +4,7 @@ import { ParsedSignal } from './telegram.js';
 import logger from '../logger.js';
 import { EventEmitter } from 'events';
 import { configService } from './configService.js';
+import { db } from './database.js';
 
 const DEFAULT_SYMBOL = process.env.DEFAULT_SYMBOL || 'XAUUSD';
 const TRADING_ENABLED = process.env.TRADING_ENABLED !== 'false';
@@ -56,15 +57,18 @@ export interface TradeUpdate {
 export class TradeManagerService extends EventEmitter {
   private priceCheckInterval: NodeJS.Timeout | null = null;
   private faultCheckInterval: NodeJS.Timeout | null = null;
+  private equitySnapshotInterval: NodeJS.Timeout | null = null;
   private isTradingEnabled = TRADING_ENABLED;
   private currentLotSize: number;
   private currentSlTpTimeout: number;
+  private currentEntryPriceTolerance: number;
 
   constructor() {
     super();
     const tradingConfig = configService.getTradingConfig();
     this.currentLotSize = tradingConfig.defaultLotSize;
     this.currentSlTpTimeout = tradingConfig.slTpTimeoutMinutes;
+    this.currentEntryPriceTolerance = tradingConfig.entryPriceTolerance;
   }
 
   async initialize(): Promise<void> {
@@ -73,9 +77,11 @@ export class TradeManagerService extends EventEmitter {
     configService.on('tradingChange', (newConfig) => {
       this.currentLotSize = newConfig.defaultLotSize;
       this.currentSlTpTimeout = newConfig.slTpTimeoutMinutes;
+      this.currentEntryPriceTolerance = newConfig.entryPriceTolerance;
       logger.info('Trading configuration updated', {
         lotSize: this.currentLotSize,
-        slTpTimeout: this.currentSlTpTimeout
+        slTpTimeout: this.currentSlTpTimeout,
+        entryPriceTolerance: this.currentEntryPriceTolerance
       });
     });
 
@@ -94,6 +100,7 @@ export class TradeManagerService extends EventEmitter {
 
     this.startPriceMonitoring();
     this.startFaultChecking();
+    this.startEquitySnapshotRecording();
 
     logger.info('Trade manager initialization complete');
   }
@@ -112,9 +119,19 @@ export class TradeManagerService extends EventEmitter {
     logger.info('Auto-close checking started (3-minute timeout)');
   }
 
+  private startEquitySnapshotRecording(): void {
+    this.equitySnapshotInterval = setInterval(() => {
+      const pnlSummary = this.getPnLSummary();
+      const currentEquity = 10000 + pnlSummary.totalPnlUsd; // Starting equity 10000
+      db.addEquitySnapshot(currentEquity, pnlSummary.totalPnlUsd);
+    }, 60000); // Every 1 minute
+    logger.info('Equity snapshot recording started (1-minute interval)');
+  }
+
   stop(): void {
     if (this.priceCheckInterval) clearInterval(this.priceCheckInterval);
     if (this.faultCheckInterval) clearInterval(this.faultCheckInterval);
+    if (this.equitySnapshotInterval) clearInterval(this.equitySnapshotInterval);
   }
 
   setTradingEnabled(enabled: boolean): void {
@@ -128,7 +145,18 @@ export class TradeManagerService extends EventEmitter {
   }
 
   async processSignal(signal: ParsedSignal): Promise<StoredTrade | null> {
-    logger.info('[TRADE_MANAGER] 📩 SIGNAL RECEIVED', {
+    // BUY-only mode: reject SELL signals
+    if (signal.action === 'SELL') {
+      logger.info('[TRADE_MANAGER] ⏸️ SELL signal ignored - BUY only mode', {
+        symbol: signal.symbol,
+        maxEntryPrice: signal.maxEntryPrice,
+        messageId: signal.messageId,
+      });
+      addSignalHistory({ stage: 'processed', signal, error: 'SELL signal ignored in BUY only mode' });
+      return null;
+    }
+
+    logger.info('[TRADE_MANAGER] 📩 BUY signal received', {
       symbol: signal.symbol,
       action: signal.action,
       maxEntryPrice: signal.maxEntryPrice,
@@ -143,8 +171,6 @@ export class TradeManagerService extends EventEmitter {
       addSignalHistory({ stage: 'processed', signal, error: 'Trading disabled' });
       return null;
     }
-
-    logger.info('[TRADE_MANAGER] ⚙️ Processing signal', { signal });
 
     try {
       const existingTrade = this.findTradeByMessageId(signal.messageId);
@@ -161,8 +187,6 @@ export class TradeManagerService extends EventEmitter {
         return result;
       }
 
-      logger.info('[TRADE_MANAGER] 🔍 No existing trade found, checking for new entry');
-
       if (signal.action && (signal.maxEntryPrice !== undefined || signal.entryPrice !== undefined)) {
         logger.info('[TRADE_MANAGER] 📈 Opening new trade from entry signal');
         const result = await this.openTrade(signal);
@@ -172,7 +196,6 @@ export class TradeManagerService extends EventEmitter {
         return result;
       }
 
-      logger.warn('[TRADE_MANAGER] ⚠️ Signal does not match any trade action', { signal });
       addSignalHistory({ stage: 'processed', signal, error: 'No matching action' });
       return null;
     } catch (error) {
@@ -194,18 +217,15 @@ export class TradeManagerService extends EventEmitter {
     const symbol = signal.symbol || DEFAULT_SYMBOL;
     const lotSize = this.currentLotSize;
 
+    // Check entry price tolerance (±tolerance from signal price)
     if (signal.maxEntryPrice) {
-      if (signal.action === 'BUY' && currentPrice > signal.maxEntryPrice) {
-        logger.warn('BUY signal rejected: current price exceeds max entry', {
+      const priceDiff = Math.abs(currentPrice - signal.maxEntryPrice);
+      if (priceDiff > this.currentEntryPriceTolerance) {
+        logger.warn('BUY signal rejected: price difference exceeds tolerance', {
           currentPrice,
-          maxEntryPrice: signal.maxEntryPrice,
-        });
-        return null;
-      }
-      if (signal.action === 'SELL' && currentPrice < signal.maxEntryPrice) {
-        logger.warn('SELL signal rejected: current price below min entry', {
-          currentPrice,
-          minEntryPrice: signal.maxEntryPrice,
+          signalPrice: signal.maxEntryPrice,
+          tolerance: this.currentEntryPriceTolerance,
+          priceDiff: priceDiff.toFixed(2),
         });
         return null;
       }

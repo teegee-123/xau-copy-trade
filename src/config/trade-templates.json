@@ -5,7 +5,7 @@
   },
   "entrySignalTemplate": {
     "description": "Pattern to detect initial trade signal (e.g., 'gold buy 4556')",
-    "pattern": "^(gold|xau(?:usd)?)\\s+(buy|sell)\\s+([\\d.]+)$",
+    "pattern": "^(gold|xau(?:usd)?)\\s+(buy)\\s+([\\d.]+)$",
     "flags": "i",
     "extractionRules": {
       "symbol": {
@@ -30,17 +30,13 @@
       {
         "message": "gold buy 4556",
         "extracted": { "symbol": "XAUUSD", "action": "BUY", "maxEntryPrice": 4556 }
-      },
-      {
-        "message": "XAUUSD SELL 4600",
-        "extracted": { "symbol": "XAUUSD", "action": "SELL", "maxEntryPrice": 4600 }
       }
     ]
   },
   "sltpSignalTemplate": {
     "description": "Pattern to detect updated signal with SL/TP (supports emojis)",
     "matchType": "regex",
-    "pattern": "(?:GOLD|XAU(?:USD)?)\\s+(?:BUY|SELL)[\\s\\S]*?(?:SL|🔴)[\\s\\n:]*([\\d.]+)[\\s\\S]*?(?:TP|✅)[\\s\\n:]*([\\d.]+)",
+    "pattern": "(?:GOLD|XAU(?:USD)?)\\s+(?:BUY)[\\s\\S]*?(?:SL|🔴)[\\s\\n:]*([\\d.]+)[\\s\\S]*?(?:TP|✅)[\\s\\n:]*([\\d.]+)",
     "flags": "i",
     "extractionRules": {
       "stopLoss": {
@@ -52,7 +48,7 @@
         "group": 2,
         "transform": "parseFloat",
         "description": "Extract first TP value (lowest for BUY orders)",
-        "note": "If multiple TP values exist, use the first (lowest for BUY, highest for SELL)"
+        "note": "If multiple TP values exist, use the first (lowest for BUY)"
       }
     },
     "examples": [
@@ -68,13 +64,6 @@
         "extracted": {
           "stopLoss": 4676,
           "takeProfit": 4691
-        }
-      },
-      {
-        "message": "XAU SELL NOW\n\nEntry @ 4550\n\nSL\n4560\nTP\n4540\n\nRisk Management",
-        "extracted": {
-          "stopLoss": 4560,
-          "takeProfit": 4540
         }
       }
     ]

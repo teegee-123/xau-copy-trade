@@ -79,6 +79,7 @@ export interface ChannelConfig {
 export interface TradingConfig {
   defaultLotSize: number;
   slTpTimeoutMinutes: number;
+  entryPriceTolerance: number;
 }
 
 /**
@@ -169,6 +170,7 @@ export class ConfigService extends EventEmitter {
       trading: {
         defaultLotSize: parseFloat(process.env.DEFAULT_LOT_SIZE || '0.1'),
         slTpTimeoutMinutes: parseInt(process.env.SL_TP_TIMEOUT_MINUTES || '3', 10),
+        entryPriceTolerance: parseFloat(process.env.ENTRY_PRICE_TOLERANCE || '2'),
       },
       priceFeed: {
         pollingIntervalMs: parseInt(process.env.PRICE_FEED_POLLING_INTERVAL_MS || '1000', 10),
@@ -183,7 +185,7 @@ export class ConfigService extends EventEmitter {
     return {
       description: 'Entry signal: "Gold buy 4586"',
       matchType: 'regex',
-      pattern: '^(gold|xau(?:usd)?)\\s+(buy|sell)\\s+([\\d.]+)$',
+      pattern: '^(gold|xau(?:usd)?)\\s+(buy)\\s+([\\d.]+)$',
       flags: 'i',
       extractionRules: {
         symbol: {
@@ -209,10 +211,6 @@ export class ConfigService extends EventEmitter {
           message: 'Gold buy 4586',
           extracted: { symbol: 'XAUUSD', action: 'BUY', maxEntryPrice: 4586 },
         },
-        {
-          message: 'gold sell 4500',
-          extracted: { symbol: 'XAUUSD', action: 'SELL', maxEntryPrice: 4500 },
-        },
       ],
     };
   }
@@ -228,7 +226,8 @@ export class ConfigService extends EventEmitter {
       // - Emojis after SL/TP (SL🔴4704, TP✅4718)
       // - Various formats: "SL:", "SL", "SL🔴", "TP:", "TP", "TP✅"
       // - Entry price with @ symbol: "Buy @ 4712 - 4708"
-      pattern: '(?:GOLD|XAU(?:USD)?)\\s+(?:BUY|SELL)[\\s\\S]*?(?:SL|🔴)[\\s\\n:]*([\\d.]+)[\\s\\S]*?(?:TP|✅)[\\s\\n:]*([\\d.]+)',
+      // BUY only - no SELL support
+      pattern: '(?:GOLD|XAU(?:USD)?)\\s+(?:BUY)[\\s\\S]*?(?:SL|🔴)[\\s\\n:]*([\\d.]+)[\\s\\S]*?(?:TP|✅)[\\s\\n:]*([\\d.]+)',
       flags: 'i',
       extractionRules: {
         stopLoss: {
@@ -256,13 +255,6 @@ export class ConfigService extends EventEmitter {
           extracted: {
             stopLoss: 4676,
             takeProfit: 4691,
-          },
-        },
-        {
-          message: 'XAU SELL NOW\n\nEntry @ 4550\n\nSL\n4560\nTP\n4540\n\nRisk Management',
-          extracted: {
-            stopLoss: 4560,
-            takeProfit: 4540,
           },
         },
         {

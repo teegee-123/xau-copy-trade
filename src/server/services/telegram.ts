@@ -331,47 +331,28 @@ export class TelegramService extends EventEmitter {
 
     this.client.addEventHandler((event: NewMessageEvent) => {
       const message = event.message;
-      logger.info('[TELEGRAM] 📬 EVENT HANDLER TRIGGERED', {
-        hasMessage: !!message,
-        messageType: typeof message,
-      });
       this.handleNewMessage(message);
     });
 
     logger.info(`Listening for messages from channel ${this.currentChannelId}`);
-    logger.info('[TELEGRAM] Message listener registered', {
-      channelId: this.currentChannelId,
-      clientConnected: !!this.client,
-    });
   }
 
   private async handleNewMessage(message: unknown): Promise<void> {
     // Check if message is from our configured channel
     const msg = message as { chatId?: number | string; message?: string; id: number };
     const chatId = msg?.chatId?.toString() || '';
-    
-    // Log channel ID filtering
-    logger.info('[TELEGRAM] 🔍 CHANNEL CHECK', {
-      incomingChatId: chatId,
-      configuredChannelId: this.currentChannelId,
-      matches: chatId === this.currentChannelId || chatId === this.currentChannelId.replace('-', ''),
-    });
-    
+
+    // Silently ignore messages from wrong channel
     if (chatId !== this.currentChannelId && chatId !== this.currentChannelId.replace('-', '')) {
-      logger.info('[TELEGRAM] ⏭️  SKIPPED - Wrong channel', {
-        incomingChatId: chatId,
-        configuredChannelId: this.currentChannelId,
-      });
       return;
     }
 
     const text = msg.message;
     if (!text) {
-      logger.info('[TELEGRAM] ⏭️  SKIPPED - No message text');
       return;
     }
 
-    // Log incoming message with prominent green format
+    // Log incoming message from correct channel
     const messagePreview = text.length > 100 ? text.substring(0, 100) + '...' : text;
     logger.info('[TELEGRAM] 📨 INCOMING MESSAGE', {
       messageId: msg.id,
@@ -398,22 +379,7 @@ export class TelegramService extends EventEmitter {
         ...extractedData
       });
 
-      // Log before emitting signal event
-      logger.info('[TELEGRAM] 📢 EMITTING SIGNAL EVENT', {
-        messageId: msg.id,
-        symbol: parsedSignal.symbol,
-        action: parsedSignal.action,
-        listenerCount: this.listenerCount('signal'),
-      });
-
       this.emit('signal', parsedSignal);
-    } else {
-      // Log when no template matches
-      logger.info('[TELEGRAM] ❌ NO MATCH', {
-        messageId: msg.id,
-        reason: 'Message did not match any configured template',
-        preview: messagePreview
-      });
     }
   }
 
@@ -468,14 +434,6 @@ export class TelegramService extends EventEmitter {
         const regex = new RegExp(pattern, flags || 'i');
         match = regex.exec(text);
         matched = match !== null;
-        
-        // Log regex matching details
-        logger.info('[TELEGRAM] 📊 REGEX TEST', {
-          template: template.description,
-          pattern: pattern.substring(0, 80) + (pattern.length > 80 ? '...' : ''),
-          flags: flags || 'i',
-          matched: matched
-        });
       } else {
         // Simple string matching
         if (!template.matchValue) {
@@ -501,14 +459,6 @@ export class TelegramService extends EventEmitter {
         if (matched) {
           match = [text] as RegExpExecArray;
         }
-        
-        // Log simple match results
-        logger.info('[TELEGRAM] 📊 STRING MATCH TEST', {
-          template: template.description,
-          matchType: matchType,
-          matchValue: template.matchValue,
-          matched: matched
-        });
       }
 
       if (!matched) {

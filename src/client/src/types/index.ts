@@ -150,6 +150,7 @@ export interface ChannelConfig {
 export interface TradingConfig {
   defaultLotSize: number;
   slTpTimeoutMinutes: number;
+  entryPriceTolerance: number;
 }
 
 export interface PriceFeedConfig {

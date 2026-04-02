@@ -3,7 +3,8 @@
     "allow": [
       "Bash(jq *)",
       "Bash(git restore *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(python3 *)"
     ]
   },
   "$version": 3

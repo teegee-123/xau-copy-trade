@@ -43,7 +43,7 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
     extractionRules: {},
     examples: [],
   });
-  const [tradingConfig, setTradingConfig] = useState({ defaultLotSize: 0.1, slTpTimeoutMinutes: 5 });
+  const [tradingConfig, setTradingConfig] = useState({ defaultLotSize: 0.1, slTpTimeoutMinutes: 3, entryPriceTolerance: 2 });
   const [priceFeedConfig, setPriceFeedConfig] = useState({ pollingIntervalMs: 1000 });
 
   // Sync local state with config
@@ -52,7 +52,11 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
       setChannelConfig(config.channel);
       setEntryTemplate(config.entrySignalTemplate);
       setSltpTemplate(config.sltpSignalTemplate);
-      setTradingConfig(config.trading);
+      setTradingConfig({
+        defaultLotSize: config.trading.defaultLotSize,
+        slTpTimeoutMinutes: config.trading.slTpTimeoutMinutes,
+        entryPriceTolerance: config.trading.entryPriceTolerance ?? 2,
+      });
       setPriceFeedConfig(config.priceFeed);
     }
   }, [config]);
@@ -111,28 +115,28 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
     },
     {
       id: 'entry',
-      label: 'Entry Template',
+      label: 'Entry',
       icon: (
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 11V9a2 2 0 114 0v2m0 4h-4m8-4a8 8 0 11-16 0 8 8 0 0116 0z" />
         </svg>
       ),
     },
     {
       id: 'sltp',
-      label: 'SL/TP Template',
+      label: 'SL/TP',
       icon: (
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
       ),
     },
     {
       id: 'price',
-      label: 'Price Feed',
+      label: 'Price',
       icon: (
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
         </svg>
       ),
     },
@@ -147,7 +151,7 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
     },
     {
       id: 'tester',
-      label: 'Template Tester',
+      label: 'Tester',
       icon: (
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
@@ -158,586 +162,629 @@ export function ConfigPanel({ onClose }: ConfigPanelProps) {
 
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-background-card rounded-lg p-8">
-          <div className="animate-pulse text-primary">Loading configuration...</div>
+      <div className="flex items-center justify-center p-12">
+        <div className="flex items-center gap-3 text-primary">
+          <svg className="w-6 h-6 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+          <span>Loading configuration...</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-background-card rounded-lg w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border-color">
-          <h2 className="text-xl font-bold text-primary">Configuration Settings</h2>
-          <button
-            onClick={onClose}
-            className="text-text-muted hover:text-white transition-colors"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="flex items-center justify-between p-5 border-b border-white/5">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
+            <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
-          </button>
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-white">Configuration</h2>
+            <p className="text-xs text-text-muted">Manage your trading settings</p>
+          </div>
         </div>
+        <button
+          onClick={onClose}
+          className="w-9 h-9 rounded-lg bg-white/5 flex items-center justify-center text-text-muted hover:text-white hover:bg-white/10 transition-all duration-200"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
 
-        {/* Save Message */}
-        {saveMessage && (
-          <div className={`px-4 py-2 text-sm ${
-            saveMessage.type === 'success' ? 'bg-success bg-opacity-20 text-success' : 'bg-error bg-opacity-20 text-error'
-          }`}>
-            {saveMessage.text}
+      {/* Save Message Toast */}
+      {saveMessage && (
+        <div className={`mx-5 mt-4 p-3 rounded-lg flex items-center gap-2 animate-slide-down ${
+          saveMessage.type === 'success' 
+            ? 'bg-success/20 border border-success/30 text-success' 
+            : 'bg-error/20 border border-error/30 text-error'
+        }`}>
+          {saveMessage.type === 'success' ? (
+            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+            </svg>
+          ) : (
+            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+            </svg>
+          )}
+          <span className="text-sm font-medium">{saveMessage.text}</span>
+        </div>
+      )}
+
+      {/* Tabs */}
+      <div className="flex gap-1 p-5 pb-0 overflow-x-auto">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-t-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${
+              activeTab === tab.id
+                ? 'bg-white/10 text-primary border-b-2 border-primary'
+                : 'text-text-muted hover:text-white hover:bg-white/5'
+            }`}
+          >
+            {tab.icon}
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-5 pt-4">
+        {error && (
+          <div className="mb-5 p-4 bg-error/20 border border-error/30 rounded-lg flex items-start gap-3">
+            <svg className="w-5 h-5 text-error flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+            </svg>
+            <span className="text-error text-sm">{error}</span>
           </div>
         )}
 
-        {/* Tabs */}
-        <div className="flex border-b border-border-color overflow-x-auto">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors border-b-2 ${
-                activeTab === tab.id
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-text-muted hover:text-white'
-              }`}
-            >
-              {tab.icon}
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        {/* Channel Tab */}
+        {activeTab === 'channel' && (
+          <div className="space-y-6 animate-slide-up">
+            <div>
+              <h3 className="text-lg font-semibold text-white mb-1">Telegram Channel</h3>
+              <p className="text-sm text-text-muted mb-5">Configure the Telegram channel to monitor for signals</p>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {error && (
-            <div className="mb-4 p-3 bg-error bg-opacity-20 text-error rounded text-sm">
-              {error}
+              <div className="space-y-5">
+                <div>
+                  <label className="block text-sm font-medium text-text-muted mb-2">
+                    Channel ID
+                  </label>
+                  <input
+                    type="text"
+                    value={channelConfig.channelId}
+                    onChange={(e) => setChannelConfig(prev => ({ ...prev, channelId: e.target.value }))}
+                    className="input-field w-full"
+                    placeholder="-1001234567890"
+                  />
+                  <p className="mt-2 text-xs text-text-muted">
+                    The ID of the Telegram channel (e.g., -1001234567890)
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-text-muted mb-2">
+                    Channel Name
+                  </label>
+                  <input
+                    type="text"
+                    value={channelConfig.channelName}
+                    onChange={(e) => setChannelConfig(prev => ({ ...prev, channelName: e.target.value }))}
+                    className="input-field w-full"
+                    placeholder="XAU Signals Pro"
+                  />
+                  <p className="mt-2 text-xs text-text-muted">
+                    Display name for your reference
+                  </p>
+                </div>
+
+                <button
+                  onClick={handleChannelSave}
+                  disabled={saving}
+                  className="btn-primary"
+                >
+                  {saving ? (
+                    <span className="flex items-center gap-2">
+                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Saving...
+                    </span>
+                  ) : 'Save Configuration'}
+                </button>
+              </div>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Channel Tab */}
-          {activeTab === 'channel' && (
-            <div className="space-y-6">
+        {/* Entry Template Tab */}
+        {activeTab === 'entry' && (
+          <div className="space-y-6 animate-slide-up">
+            <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-semibold text-white mb-4">Telegram Channel Configuration</h3>
-
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-text-muted mb-1">
-                      Channel ID
-                    </label>
-                    <input
-                      type="text"
-                      value={channelConfig.channelId}
-                      onChange={(e) => setChannelConfig(prev => ({ ...prev, channelId: e.target.value }))}
-                      className="w-full bg-background border border-border-color rounded px-3 py-2 text-white focus:outline-none focus:border-primary"
-                      placeholder="-1001234567890"
-                    />
-                    <p className="mt-1 text-xs text-text-muted">
-                      The ID of the Telegram channel to monitor for signals (e.g., -1001234567890)
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-text-muted mb-1">
-                      Channel Name
-                    </label>
-                    <input
-                      type="text"
-                      value={channelConfig.channelName}
-                      onChange={(e) => setChannelConfig(prev => ({ ...prev, channelName: e.target.value }))}
-                      className="w-full bg-background border border-border-color rounded px-3 py-2 text-white focus:outline-none focus:border-primary"
-                      placeholder="XAU Signals Pro"
-                    />
-                    <p className="mt-1 text-xs text-text-muted">
-                      Display name for the channel (for your reference)
-                    </p>
-                  </div>
-
-                  <button
-                    onClick={handleChannelSave}
-                    disabled={saving}
-                    className="btn-primary"
-                  >
-                    {saving ? 'Saving...' : 'Save Channel Configuration'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Entry Template Tab */}
-          {activeTab === 'entry' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-white">Entry Signal Template</h3>
-                <button
-                  onClick={() => setAdvancedMode(prev => ({ ...prev, entry: !prev.entry }))}
-                  className="text-sm text-primary hover:text-primary-light"
-                >
-                  {advancedMode.entry ? 'Hide Advanced' : 'Show Advanced'}
-                </button>
+                <p className="text-sm text-text-muted">Define how entry signals are parsed</p>
               </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-text-muted mb-1">
-                    Description
-                  </label>
-                  <input
-                    type="text"
-                    value={entryTemplate.description}
-                    onChange={(e) => setEntryTemplate(prev => ({ ...prev, description: e.target.value }))}
-                    className="w-full bg-background border border-border-color rounded px-3 py-2 text-white focus:outline-none focus:border-primary"
-                  />
-                </div>
-
-                {advancedMode.entry ? (
-                  <>
-                    {/* Match Type Selection */}
-                    <div>
-                      <label className="block text-sm font-medium text-text-muted mb-1">
-                        Match Type
-                      </label>
-                      <select
-                        value={entryTemplate.matchType || 'regex'}
-                        onChange={(e) => setEntryTemplate(prev => ({ ...prev, matchType: e.target.value as MatchType }))}
-                        className="w-full bg-background border border-border-color rounded px-3 py-2 text-white focus:outline-none focus:border-primary"
-                      >
-                        <option value="regex">Regex (Advanced Pattern Matching)</option>
-                        <option value="startswith">Starts With (Simple Text Match)</option>
-                        <option value="endswith">Ends With (Simple Text Match)</option>
-                        <option value="contains">Contains (Simple Text Match)</option>
-                      </select>
-                      <p className="mt-1 text-xs text-text-muted">
-                        Choose between regex or simple string matching
-                      </p>
-                    </div>
-
-                    {/* Regex Mode Fields */}
-                    {(entryTemplate.matchType || 'regex') === 'regex' && (
-                      <>
-                        <div>
-                          <label className="block text-sm font-medium text-text-muted mb-1">
-                            Regex Pattern
-                          </label>
-                          <input
-                            type="text"
-                            value={entryTemplate.pattern}
-                            onChange={(e) => setEntryTemplate(prev => ({ ...prev, pattern: e.target.value }))}
-                            className="w-full bg-background border border-border-color rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-primary"
-                            placeholder="^(gold|xau)\\s+(buy|sell)\\s+([\\d.]+)$"
-                          />
-                          <p className="mt-1 text-xs text-text-muted">
-                            JavaScript regex pattern to match entry signals
-                          </p>
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-text-muted mb-1">
-                            Flags
-                          </label>
-                          <input
-                            type="text"
-                            value={entryTemplate.flags}
-                            onChange={(e) => setEntryTemplate(prev => ({ ...prev, flags: e.target.value }))}
-                            className="w-full bg-background border border-border-color rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-primary"
-                            placeholder="i"
-                          />
-                          <p className="mt-1 text-xs text-text-muted">
-                            Regex flags (e.g., 'i' for case-insensitive)
-                          </p>
-                        </div>
-                      </>
-                    )}
-
-                    {/* Simple Match Mode Fields */}
-                    {entryTemplate.matchType && entryTemplate.matchType !== 'regex' && (
-                      <>
-                        <div>
-                          <label className="block text-sm font-medium text-text-muted mb-1">
-                            Match Value
-                          </label>
-                          <input
-                            type="text"
-                            value={entryTemplate.matchValue}
-                            onChange={(e) => setEntryTemplate(prev => ({ ...prev, matchValue: e.target.value }))}
-                            className="w-full bg-background border border-border-color rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-primary"
-                            placeholder={entryTemplate.matchType === 'startswith' ? 'Text at start of message' : entryTemplate.matchType === 'endswith' ? 'Text at end of message' : 'Text to search for'}
-                          />
-                          <p className="mt-1 text-xs text-text-muted">
-                            The text to {entryTemplate.matchType === 'startswith' ? 'match at the start' : entryTemplate.matchType === 'endswith' ? 'match at the end' : 'search for'} in the message
-                          </p>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            id="entry-case-sensitive"
-                            checked={entryTemplate.caseSensitive || false}
-                            onChange={(e) => setEntryTemplate(prev => ({ ...prev, caseSensitive: e.target.checked }))}
-                            className="rounded border-border-color bg-background text-primary focus:ring-primary"
-                          />
-                          <label htmlFor="entry-case-sensitive" className="text-sm text-text-muted">
-                            Case Sensitive
-                          </label>
-                          <p className="text-xs text-text-muted">
-                            When unchecked, matching is case-insensitive
-                          </p>
-                        </div>
-                      </>
-                    )}
-
-                    <div>
-                      <label className="block text-sm font-medium text-text-muted mb-1">
-                        Extraction Rules (JSON)
-                      </label>
-                      <textarea
-                        value={JSON.stringify(entryTemplate.extractionRules, null, 2)}
-                        onChange={(e) => {
-                          try {
-                            const rules = JSON.parse(e.target.value);
-                            setEntryTemplate(prev => ({ ...prev, extractionRules: rules }));
-                          } catch {}
-                        }}
-                        className="w-full bg-background border border-border-color rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-primary h-48"
-                      />
-                      <p className="mt-1 text-xs text-text-muted">
-                        Define how to extract fields from the matched text
-                      </p>
-                    </div>
-                  </>
-                ) : (
-                  <div className="p-4 bg-background rounded border border-border-color">
-                    <p className="text-sm text-text-muted">
-                      <strong>Match Type:</strong> <span className="text-primary">{entryTemplate.matchType || 'regex'}</span>
-                    </p>
-                    {(entryTemplate.matchType || 'regex') === 'regex' ? (
-                      <>
-                        <p className="text-sm text-text-muted mt-2">
-                          <strong>Pattern:</strong> <code className="text-primary">{entryTemplate.pattern || 'Not set'}</code>
-                        </p>
-                        <p className="text-sm text-text-muted mt-2">
-                          <strong>Flags:</strong> {entryTemplate.flags || 'none'}
-                        </p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-sm text-text-muted mt-2">
-                          <strong>Match Value:</strong> <code className="text-primary">{entryTemplate.matchValue || 'Not set'}</code>
-                        </p>
-                        <p className="text-sm text-text-muted mt-2">
-                          <strong>Case Sensitive:</strong> {entryTemplate.caseSensitive ? 'Yes' : 'No'}
-                        </p>
-                      </>
-                    )}
-                    <p className="text-sm text-text-muted mt-2">
-                      <strong>Extraction Rules:</strong> {Object.keys(entryTemplate.extractionRules).length > 0 ? Object.keys(entryTemplate.extractionRules).join(', ') : 'None'}
-                    </p>
-                  </div>
-                )}
-
-                <button
-                  onClick={handleEntryTemplateSave}
-                  disabled={saving}
-                  className="btn-primary"
-                >
-                  {saving ? 'Saving...' : 'Save Entry Template'}
-                </button>
-              </div>
+              <button
+                onClick={() => setAdvancedMode(prev => ({ ...prev, entry: !prev.entry }))}
+                className="text-sm text-primary hover:text-primary-dark transition-colors"
+              >
+                {advancedMode.entry ? 'Hide Advanced' : 'Show Advanced'}
+              </button>
             </div>
-          )}
 
-          {/* SL/TP Template Tab */}
-          {activeTab === 'sltp' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
+            <div className="space-y-5">
+              <div>
+                <label className="block text-sm font-medium text-text-muted mb-2">
+                  Description
+                </label>
+                <input
+                  type="text"
+                  value={entryTemplate.description}
+                  onChange={(e) => setEntryTemplate(prev => ({ ...prev, description: e.target.value }))}
+                  className="input-field w-full"
+                />
+              </div>
+
+              {advancedMode.entry ? (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-text-muted mb-2">
+                      Match Type
+                    </label>
+                    <select
+                      value={entryTemplate.matchType || 'regex'}
+                      onChange={(e) => setEntryTemplate(prev => ({ ...prev, matchType: e.target.value as MatchType }))}
+                      className="input-field w-full"
+                    >
+                      <option value="regex">Regex (Advanced Pattern Matching)</option>
+                      <option value="startswith">Starts With</option>
+                      <option value="endswith">Ends With</option>
+                      <option value="contains">Contains</option>
+                    </select>
+                  </div>
+
+                  {(entryTemplate.matchType || 'regex') === 'regex' && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-text-muted mb-2">
+                          Regex Pattern
+                        </label>
+                        <input
+                          type="text"
+                          value={entryTemplate.pattern}
+                          onChange={(e) => setEntryTemplate(prev => ({ ...prev, pattern: e.target.value }))}
+                          className="input-field w-full font-mono text-sm"
+                          placeholder="^(gold|xau)\\s+(buy|sell)\\s+([\\d.]+)$"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-text-muted mb-2">
+                          Flags
+                        </label>
+                        <input
+                          type="text"
+                          value={entryTemplate.flags}
+                          onChange={(e) => setEntryTemplate(prev => ({ ...prev, flags: e.target.value }))}
+                          className="input-field w-full font-mono text-sm"
+                          placeholder="i"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {entryTemplate.matchType && entryTemplate.matchType !== 'regex' && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-text-muted mb-2">
+                          Match Value
+                        </label>
+                        <input
+                          type="text"
+                          value={entryTemplate.matchValue}
+                          onChange={(e) => setEntryTemplate(prev => ({ ...prev, matchValue: e.target.value }))}
+                          className="input-field w-full font-mono text-sm"
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id="entry-case-sensitive"
+                          checked={entryTemplate.caseSensitive || false}
+                          onChange={(e) => setEntryTemplate(prev => ({ ...prev, caseSensitive: e.target.checked }))}
+                          className="w-4 h-4 rounded border-border-color bg-background text-primary focus:ring-primary"
+                        />
+                        <label htmlFor="entry-case-sensitive" className="text-sm text-text-muted">
+                          Case Sensitive
+                        </label>
+                      </div>
+                    </>
+                  )}
+
+                  <div>
+                    <label className="block text-sm font-medium text-text-muted mb-2">
+                      Extraction Rules (JSON)
+                    </label>
+                    <textarea
+                      value={JSON.stringify(entryTemplate.extractionRules, null, 2)}
+                      onChange={(e) => {
+                        try {
+                          const rules = JSON.parse(e.target.value);
+                          setEntryTemplate(prev => ({ ...prev, extractionRules: rules }));
+                        } catch {}
+                      }}
+                      className="input-field w-full font-mono text-sm h-48 resize-none"
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="p-4 bg-white/5 rounded-lg border border-white/5 space-y-2">
+                  <p className="text-sm">
+                    <span className="text-text-muted">Match Type:</span>{' '}
+                    <span className="text-primary font-medium">{entryTemplate.matchType || 'regex'}</span>
+                  </p>
+                  {(entryTemplate.matchType || 'regex') === 'regex' ? (
+                    <>
+                      <p className="text-sm">
+                        <span className="text-text-muted">Pattern:</span>{' '}
+                        <code className="text-primary font-mono">{entryTemplate.pattern || 'Not set'}</code>
+                      </p>
+                      <p className="text-sm">
+                        <span className="text-text-muted">Flags:</span>{' '}
+                        <span className="text-white">{entryTemplate.flags || 'none'}</span>
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm">
+                        <span className="text-text-muted">Match Value:</span>{' '}
+                        <code className="text-primary font-mono">{entryTemplate.matchValue || 'Not set'}</code>
+                      </p>
+                      <p className="text-sm">
+                        <span className="text-text-muted">Case Sensitive:</span>{' '}
+                        <span className="text-white">{entryTemplate.caseSensitive ? 'Yes' : 'No'}</span>
+                      </p>
+                    </>
+                  )}
+                  <p className="text-sm">
+                    <span className="text-text-muted">Extraction Rules:</span>{' '}
+                    <span className="text-white">
+                      {Object.keys(entryTemplate.extractionRules).length > 0 
+                        ? Object.keys(entryTemplate.extractionRules).join(', ') 
+                        : 'None'}
+                    </span>
+                  </p>
+                </div>
+              )}
+
+              <button
+                onClick={handleEntryTemplateSave}
+                disabled={saving}
+                className="btn-primary"
+              >
+                {saving ? 'Saving...' : 'Save Template'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* SL/TP Template Tab */}
+        {activeTab === 'sltp' && (
+          <div className="space-y-6 animate-slide-up">
+            <div className="flex items-center justify-between">
+              <div>
                 <h3 className="text-lg font-semibold text-white">SL/TP Signal Template</h3>
-                <button
-                  onClick={() => setAdvancedMode(prev => ({ ...prev, sltp: !prev.sltp }))}
-                  className="text-sm text-primary hover:text-primary-light"
-                >
-                  {advancedMode.sltp ? 'Hide Advanced' : 'Show Advanced'}
-                </button>
+                <p className="text-sm text-text-muted">Define how SL/TP updates are parsed</p>
               </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-text-muted mb-1">
-                    Description
-                  </label>
-                  <input
-                    type="text"
-                    value={sltpTemplate.description}
-                    onChange={(e) => setSltpTemplate(prev => ({ ...prev, description: e.target.value }))}
-                    className="w-full bg-background border border-border-color rounded px-3 py-2 text-white focus:outline-none focus:border-primary"
-                  />
-                </div>
-
-                {advancedMode.sltp ? (
-                  <>
-                    {/* Match Type Selection */}
-                    <div>
-                      <label className="block text-sm font-medium text-text-muted mb-1">
-                        Match Type
-                      </label>
-                      <select
-                        value={sltpTemplate.matchType || 'regex'}
-                        onChange={(e) => setSltpTemplate(prev => ({ ...prev, matchType: e.target.value as MatchType }))}
-                        className="w-full bg-background border border-border-color rounded px-3 py-2 text-white focus:outline-none focus:border-primary"
-                      >
-                        <option value="regex">Regex (Advanced Pattern Matching)</option>
-                        <option value="startswith">Starts With (Simple Text Match)</option>
-                        <option value="endswith">Ends With (Simple Text Match)</option>
-                        <option value="contains">Contains (Simple Text Match)</option>
-                      </select>
-                      <p className="mt-1 text-xs text-text-muted">
-                        Choose between regex or simple string matching
-                      </p>
-                    </div>
-
-                    {/* Regex Mode Fields */}
-                    {(sltpTemplate.matchType || 'regex') === 'regex' && (
-                      <>
-                        <div>
-                          <label className="block text-sm font-medium text-text-muted mb-1">
-                            Regex Pattern
-                          </label>
-                          <input
-                            type="text"
-                            value={sltpTemplate.pattern}
-                            onChange={(e) => setSltpTemplate(prev => ({ ...prev, pattern: e.target.value }))}
-                            className="w-full bg-background border border-border-color rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-primary"
-                          />
-                          <p className="mt-1 text-xs text-text-muted">
-                            JavaScript regex pattern to match SL/TP update signals
-                          </p>
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-text-muted mb-1">
-                            Flags
-                          </label>
-                          <input
-                            type="text"
-                            value={sltpTemplate.flags}
-                            onChange={(e) => setSltpTemplate(prev => ({ ...prev, flags: e.target.value }))}
-                            className="w-full bg-background border border-border-color rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-primary"
-                          />
-                          <p className="mt-1 text-xs text-text-muted">
-                            Regex flags (e.g., 'i' for case-insensitive)
-                          </p>
-                        </div>
-                      </>
-                    )}
-
-                    {/* Simple Match Mode Fields */}
-                    {sltpTemplate.matchType && sltpTemplate.matchType !== 'regex' && (
-                      <>
-                        <div>
-                          <label className="block text-sm font-medium text-text-muted mb-1">
-                            Match Value
-                          </label>
-                          <input
-                            type="text"
-                            value={sltpTemplate.matchValue}
-                            onChange={(e) => setSltpTemplate(prev => ({ ...prev, matchValue: e.target.value }))}
-                            className="w-full bg-background border border-border-color rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-primary"
-                            placeholder={sltpTemplate.matchType === 'startswith' ? 'Text at start of message' : sltpTemplate.matchType === 'endswith' ? 'Text at end of message' : 'Text to search for'}
-                          />
-                          <p className="mt-1 text-xs text-text-muted">
-                            The text to {sltpTemplate.matchType === 'startswith' ? 'match at the start' : sltpTemplate.matchType === 'endswith' ? 'match at the end' : 'search for'} in the message
-                          </p>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            id="sltp-case-sensitive"
-                            checked={sltpTemplate.caseSensitive || false}
-                            onChange={(e) => setSltpTemplate(prev => ({ ...prev, caseSensitive: e.target.checked }))}
-                            className="rounded border-border-color bg-background text-primary focus:ring-primary"
-                          />
-                          <label htmlFor="sltp-case-sensitive" className="text-sm text-text-muted">
-                            Case Sensitive
-                          </label>
-                          <p className="text-xs text-text-muted">
-                            When unchecked, matching is case-insensitive
-                          </p>
-                        </div>
-                      </>
-                    )}
-
-                    <div>
-                      <label className="block text-sm font-medium text-text-muted mb-1">
-                        Extraction Rules (JSON)
-                      </label>
-                      <textarea
-                        value={JSON.stringify(sltpTemplate.extractionRules, null, 2)}
-                        onChange={(e) => {
-                          try {
-                            const rules = JSON.parse(e.target.value);
-                            setSltpTemplate(prev => ({ ...prev, extractionRules: rules }));
-                          } catch {}
-                        }}
-                        className="w-full bg-background border border-border-color rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-primary h-48"
-                      />
-                      <p className="mt-1 text-xs text-text-muted">
-                        Define how to extract fields from the matched text
-                      </p>
-                    </div>
-                  </>
-                ) : (
-                  <div className="p-4 bg-background rounded border border-border-color">
-                    <p className="text-sm text-text-muted">
-                      <strong>Match Type:</strong> <span className="text-primary">{sltpTemplate.matchType || 'regex'}</span>
-                    </p>
-                    {(sltpTemplate.matchType || 'regex') === 'regex' ? (
-                      <>
-                        <p className="text-sm text-text-muted mt-2">
-                          <strong>Pattern:</strong> <code className="text-primary">{sltpTemplate.pattern || 'Not set'}</code>
-                        </p>
-                        <p className="text-sm text-text-muted mt-2">
-                          <strong>Flags:</strong> {sltpTemplate.flags || 'none'}
-                        </p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-sm text-text-muted mt-2">
-                          <strong>Match Value:</strong> <code className="text-primary">{sltpTemplate.matchValue || 'Not set'}</code>
-                        </p>
-                        <p className="text-sm text-text-muted mt-2">
-                          <strong>Case Sensitive:</strong> {sltpTemplate.caseSensitive ? 'Yes' : 'No'}
-                        </p>
-                      </>
-                    )}
-                    <p className="text-sm text-text-muted mt-2">
-                      <strong>Extraction Rules:</strong> {Object.keys(sltpTemplate.extractionRules).length > 0 ? Object.keys(sltpTemplate.extractionRules).join(', ') : 'None'}
-                    </p>
-                  </div>
-                )}
-
-                <button
-                  onClick={handleSltpTemplateSave}
-                  disabled={saving}
-                  className="btn-primary"
-                >
-                  {saving ? 'Saving...' : 'Save SL/TP Template'}
-                </button>
-              </div>
+              <button
+                onClick={() => setAdvancedMode(prev => ({ ...prev, sltp: !prev.sltp }))}
+                className="text-sm text-primary hover:text-primary-dark transition-colors"
+              >
+                {advancedMode.sltp ? 'Hide Advanced' : 'Show Advanced'}
+              </button>
             </div>
-          )}
 
-          {/* Price Feed Tab */}
-          {activeTab === 'price' && (
-            <div className="space-y-6">
-              <h3 className="text-lg font-semibold text-white">Price Feed Configuration</h3>
-              
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-text-muted mb-1">
-                    Polling Interval (milliseconds)
-                  </label>
+            <div className="space-y-5">
+              <div>
+                <label className="block text-sm font-medium text-text-muted mb-2">
+                  Description
+                </label>
+                <input
+                  type="text"
+                  value={sltpTemplate.description}
+                  onChange={(e) => setSltpTemplate(prev => ({ ...prev, description: e.target.value }))}
+                  className="input-field w-full"
+                />
+              </div>
+
+              {advancedMode.sltp ? (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-text-muted mb-2">
+                      Match Type
+                    </label>
+                    <select
+                      value={sltpTemplate.matchType || 'regex'}
+                      onChange={(e) => setSltpTemplate(prev => ({ ...prev, matchType: e.target.value as MatchType }))}
+                      className="input-field w-full"
+                    >
+                      <option value="regex">Regex (Advanced Pattern Matching)</option>
+                      <option value="startswith">Starts With</option>
+                      <option value="endswith">Ends With</option>
+                      <option value="contains">Contains</option>
+                    </select>
+                  </div>
+
+                  {(sltpTemplate.matchType || 'regex') === 'regex' && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-text-muted mb-2">
+                          Regex Pattern
+                        </label>
+                        <input
+                          type="text"
+                          value={sltpTemplate.pattern}
+                          onChange={(e) => setSltpTemplate(prev => ({ ...prev, pattern: e.target.value }))}
+                          className="input-field w-full font-mono text-sm"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-text-muted mb-2">
+                          Flags
+                        </label>
+                        <input
+                          type="text"
+                          value={sltpTemplate.flags}
+                          onChange={(e) => setSltpTemplate(prev => ({ ...prev, flags: e.target.value }))}
+                          className="input-field w-full font-mono text-sm"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {sltpTemplate.matchType && sltpTemplate.matchType !== 'regex' && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-text-muted mb-2">
+                          Match Value
+                        </label>
+                        <input
+                          type="text"
+                          value={sltpTemplate.matchValue}
+                          onChange={(e) => setSltpTemplate(prev => ({ ...prev, matchValue: e.target.value }))}
+                          className="input-field w-full font-mono text-sm"
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id="sltp-case-sensitive"
+                          checked={sltpTemplate.caseSensitive || false}
+                          onChange={(e) => setSltpTemplate(prev => ({ ...prev, caseSensitive: e.target.checked }))}
+                          className="w-4 h-4 rounded border-border-color bg-background text-primary focus:ring-primary"
+                        />
+                        <label htmlFor="sltp-case-sensitive" className="text-sm text-text-muted">
+                          Case Sensitive
+                        </label>
+                      </div>
+                    </>
+                  )}
+
+                  <div>
+                    <label className="block text-sm font-medium text-text-muted mb-2">
+                      Extraction Rules (JSON)
+                    </label>
+                    <textarea
+                      value={JSON.stringify(sltpTemplate.extractionRules, null, 2)}
+                      onChange={(e) => {
+                        try {
+                          const rules = JSON.parse(e.target.value);
+                          setSltpTemplate(prev => ({ ...prev, extractionRules: rules }));
+                        } catch {}
+                      }}
+                      className="input-field w-full font-mono text-sm h-48 resize-none"
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="p-4 bg-white/5 rounded-lg border border-white/5 space-y-2">
+                  <p className="text-sm">
+                    <span className="text-text-muted">Match Type:</span>{' '}
+                    <span className="text-primary font-medium">{sltpTemplate.matchType || 'regex'}</span>
+                  </p>
+                  {(sltpTemplate.matchType || 'regex') === 'regex' ? (
+                    <>
+                      <p className="text-sm">
+                        <span className="text-text-muted">Pattern:</span>{' '}
+                        <code className="text-primary font-mono">{sltpTemplate.pattern || 'Not set'}</code>
+                      </p>
+                      <p className="text-sm">
+                        <span className="text-text-muted">Flags:</span>{' '}
+                        <span className="text-white">{sltpTemplate.flags || 'none'}</span>
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm">
+                        <span className="text-text-muted">Match Value:</span>{' '}
+                        <code className="text-primary font-mono">{sltpTemplate.matchValue || 'Not set'}</code>
+                      </p>
+                      <p className="text-sm">
+                        <span className="text-text-muted">Case Sensitive:</span>{' '}
+                        <span className="text-white">{sltpTemplate.caseSensitive ? 'Yes' : 'No'}</span>
+                      </p>
+                    </>
+                  )}
+                  <p className="text-sm">
+                    <span className="text-text-muted">Extraction Rules:</span>{' '}
+                    <span className="text-white">
+                      {Object.keys(sltpTemplate.extractionRules).length > 0 
+                        ? Object.keys(sltpTemplate.extractionRules).join(', ') 
+                        : 'None'}
+                    </span>
+                  </p>
+                </div>
+              )}
+
+              <button
+                onClick={handleSltpTemplateSave}
+                disabled={saving}
+                className="btn-primary"
+              >
+                {saving ? 'Saving...' : 'Save Template'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Price Feed Tab */}
+        {activeTab === 'price' && (
+          <div className="space-y-6 animate-slide-up">
+            <div>
+              <h3 className="text-lg font-semibold text-white mb-1">Price Feed</h3>
+              <p className="text-sm text-text-muted mb-5">Configure price data polling settings</p>
+            </div>
+
+            <div className="space-y-5">
+              <div>
+                <label className="block text-sm font-medium text-text-muted mb-2">
+                  Polling Interval (milliseconds)
+                </label>
+                <input
+                  type="number"
+                  value={priceFeedConfig.pollingIntervalMs}
+                  onChange={(e) => setPriceFeedConfig(prev => ({ ...prev, pollingIntervalMs: parseInt(e.target.value) || 1000 }))}
+                  className="input-field w-full"
+                  min={500}
+                  max={10000}
+                  step={100}
+                />
+                <p className="mt-2 text-xs text-text-muted">
+                  How often to fetch price data (500ms - 10000ms)
+                </p>
+                <div className="mt-4">
                   <input
-                    type="number"
+                    type="range"
                     value={priceFeedConfig.pollingIntervalMs}
                     onChange={(e) => setPriceFeedConfig(prev => ({ ...prev, pollingIntervalMs: parseInt(e.target.value) || 1000 }))}
-                    className="w-full bg-background border border-border-color rounded px-3 py-2 text-white focus:outline-none focus:border-primary"
+                    className="w-full accent-primary"
                     min={500}
                     max={10000}
                     step={100}
                   />
-                  <p className="mt-1 text-xs text-text-muted">
-                    How often to pull price from the price service (500ms - 10000ms)
-                  </p>
-                  <div className="mt-2">
-                    <input
-                      type="range"
-                      value={priceFeedConfig.pollingIntervalMs}
-                      onChange={(e) => setPriceFeedConfig(prev => ({ ...prev, pollingIntervalMs: parseInt(e.target.value) || 1000 }))}
-                      className="w-full"
-                      min={500}
-                      max={10000}
-                      step={100}
-                    />
-                    <div className="flex justify-between text-xs text-text-muted mt-1">
-                      <span>500ms</span>
-                      <span>10000ms</span>
-                    </div>
+                  <div className="flex justify-between text-xs text-text-muted mt-2">
+                    <span>500ms</span>
+                    <span>10000ms</span>
                   </div>
                 </div>
-
-                <button
-                  onClick={handlePriceFeedSave}
-                  disabled={saving}
-                  className="btn-primary"
-                >
-                  {saving ? 'Saving...' : 'Save Price Feed Configuration'}
-                </button>
               </div>
+
+              <button
+                onClick={handlePriceFeedSave}
+                disabled={saving}
+                className="btn-primary"
+              >
+                {saving ? 'Saving...' : 'Save Configuration'}
+              </button>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Trading Tab */}
-          {activeTab === 'trading' && (
-            <div className="space-y-6">
-              <h3 className="text-lg font-semibold text-white">Trading Configuration</h3>
-              
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-text-muted mb-1">
-                    Default Lot Size
-                  </label>
-                  <input
-                    type="number"
-                    value={tradingConfig.defaultLotSize}
-                    onChange={(e) => setTradingConfig(prev => ({ ...prev, defaultLotSize: parseFloat(e.target.value) || 0.1 }))}
-                    className="w-full bg-background border border-border-color rounded px-3 py-2 text-white focus:outline-none focus:border-primary"
-                    min={0.01}
-                    step={0.01}
-                  />
-                  <p className="mt-1 text-xs text-text-muted">
-                    Position size for new trades (e.g., 0.1 lot)
-                  </p>
-                </div>
+        {/* Trading Tab */}
+        {activeTab === 'trading' && (
+          <div className="space-y-6 animate-slide-up">
+            <div>
+              <h3 className="text-lg font-semibold text-white mb-1">Trading Settings</h3>
+              <p className="text-sm text-text-muted mb-5">Configure default trading parameters</p>
+            </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-text-muted mb-1">
-                    SL/TP Timeout (minutes)
-                  </label>
-                  <input
-                    type="number"
-                    value={tradingConfig.slTpTimeoutMinutes}
-                    onChange={(e) => setTradingConfig(prev => ({ ...prev, slTpTimeoutMinutes: parseInt(e.target.value) || 5 }))}
-                    className="w-full bg-background border border-border-color rounded px-3 py-2 text-white focus:outline-none focus:border-primary"
-                    min={1}
-                  />
-                  <p className="mt-1 text-xs text-text-muted">
-                    Time after which trades missing SL/TP are marked as faulted
-                  </p>
-                </div>
-
-                <button
-                  onClick={handleTradingSave}
-                  disabled={saving}
-                  className="btn-primary"
-                >
-                  {saving ? 'Saving...' : 'Save Trading Configuration'}
-                </button>
+            <div className="space-y-5">
+              <div>
+                <label className="block text-sm font-medium text-text-muted mb-2">
+                  Default Lot Size
+                </label>
+                <input
+                  type="number"
+                  value={tradingConfig.defaultLotSize}
+                  onChange={(e) => setTradingConfig(prev => ({ ...prev, defaultLotSize: parseFloat(e.target.value) || 0.1 }))}
+                  className="input-field w-full"
+                  min={0.01}
+                  step={0.01}
+                />
+                <p className="mt-2 text-xs text-text-muted">
+                  Position size for new trades (e.g., 0.1 lot)
+                </p>
               </div>
-            </div>
-          )}
 
-          {/* Template Tester Tab */}
-          {activeTab === 'tester' && config && (
+              <div>
+                <label className="block text-sm font-medium text-text-muted mb-2">
+                  SL/TP Timeout (minutes)
+                </label>
+                <input
+                  type="number"
+                  value={tradingConfig.slTpTimeoutMinutes}
+                  onChange={(e) => setTradingConfig(prev => ({ ...prev, slTpTimeoutMinutes: parseInt(e.target.value) || 3 }))}
+                  className="input-field w-full"
+                  min={1}
+                />
+                <p className="mt-2 text-xs text-text-muted">
+                  Auto-close trades missing SL/TP after this many minutes
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-text-muted mb-2">
+                  Entry Price Tolerance
+                </label>
+                <input
+                  type="number"
+                  value={tradingConfig.entryPriceTolerance}
+                  onChange={(e) => setTradingConfig(prev => ({ ...prev, entryPriceTolerance: parseFloat(e.target.value) || 2 }))}
+                  className="input-field w-full"
+                  min={0}
+                  step={0.01}
+                />
+                <p className="mt-2 text-xs text-text-muted">
+                  Accept entry signals within ±this value from current price (e.g., 2.0 means ±2.00)
+                </p>
+              </div>
+
+              <button
+                onClick={handleTradingSave}
+                disabled={saving}
+                className="btn-primary"
+              >
+                {saving ? 'Saving...' : 'Save Configuration'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Template Tester Tab */}
+        {activeTab === 'tester' && config && (
+          <div className="animate-slide-up">
             <TemplateTester
               entryTemplate={config.entrySignalTemplate}
               sltpTemplate={config.sltpSignalTemplate}
             />
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
